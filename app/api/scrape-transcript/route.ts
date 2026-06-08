@@ -131,6 +131,61 @@ function parseTranscriptHtml(html: string, debugLog: string[]): GPACourse[] {
   return courses;
 }
 
+function getAttr(xml: string, ...attrs: string[]): string {
+  for (const attr of attrs) {
+    const m = xml.match(new RegExp(`(?:^|\\s)${attr}="([^"]*)"`, "i"));
+    if (m && m[1] !== "") return m[1];
+  }
+  return "";
+}
+
+function yearFromDate(dateStr: string): string {
+  const parts = dateStr.split("/");
+  const month = parseInt(parts[0]);
+  const yr = parseInt(parts[2]);
+  if (isNaN(month) || isNaN(yr)) return "";
+  return month >= 7 ? `${yr}-${String(yr+1).slice(2)}` : `${yr-1}-${String(yr).slice(2)}`;
+}
+
+function parseWebServiceTranscript(xml: string): GPACourse[] {
+  const courses: GPACourse[] = [];
+  const groupBlocks = xml.split(/<TranscriptGroup/i).slice(1);
+  if (groupBlocks.length > 0) {
+    for (const gb of groupBlocks) {
+      const groupName = getAttr("<TranscriptGroup " + gb, "GroupName", "Year", "SchoolYear") || "";
+      const ym = groupName.match(/(\d{4}[-–]\d{2,4})/);
+      let year = "";
+      if (ym) { const p = ym[1].replace("–","-").split("-"); year = `${p[0]}-${p[1].length===4?p[1].slice(2):p[1]}`; }
+      else year = groupName || "Prior";
+      for (const block of gb.split(/<Course[\s>]/i).slice(1)) {
+        const c = parseTxBlock(block, year);
+        if (c) courses.push(c);
+      }
+    }
+    if (courses.length > 0) return courses;
+  }
+  for (const block of xml.split(/<Course[\s>]/i).slice(1)) {
+    const dateStr = getAttr(block, "StartDate");
+    const year = yearFromDate(dateStr) || getAttr(block, "SchoolYear","Year") || "Prior";
+    const c = parseTxBlock(block, year);
+    if (c) courses.push(c);
+  }
+  return courses;
+}
+
+function parseTxBlock(block: string, year: string): GPACourse | null {
+  const name = getAttr(block, "CourseTitle","Title","CourseName");
+  if (!name || shouldExclude(name)) return null;
+  const credits = parseFloat(getAttr(block,"CreditEarned","Credit","Credits")) || 1;
+  const pctStr = getAttr(block,"CalculatedScoreRaw","Percent","PercentageGrade","Score");
+  const ltStr  = getAttr(block,"Mark","MarkName","Grade","FinalGrade","LetterGrade");
+  let grade: number|null = null;
+  if (pctStr && !isNaN(parseFloat(pctStr))) grade = parseFloat(pctStr);
+  else if (ltStr) grade = letterToMidpoint(ltStr);
+  if (!grade || grade <= 0) return null;
+  return { id: `${name}-${year}-${Math.random().toString(36).slice(2,6)}`, name, grade, credits, type: detectCourseType(name), year, excluded: shouldExclude(name) };
+}
+
 export async function POST(request: NextRequest) {
   const { username, password, districtUrl } = await request.json();
   if (!username || !password || !districtUrl) {
@@ -188,7 +243,54 @@ export async function POST(request: NextRequest) {
       debugLog.push(`Login may have failed — still on login page or invalid msg`);
     }
 
-    // ── Step 3: Fetch home page to discover what pages actually exist ────────
+    // ── Step 3: Now that we have a valid session, try web service API with cookie ──
+    // The 500 error we got before was with credentials-only auth.
+    // Session cookie auth may have different permissions.
+    const wsPaths = [
+      "/SVUE/PXP2_CommunicationWebServiceRest.asmx/ProcessWebServiceRequest",
+      "/SVUE/Service/PXPCommunication.asmx/ProcessWebServiceRequest",
+    ];
+    const wsMethods = [
+      { name: "GetStudentTranscript",   params: `<Parms><Param id="childIntID">0</Param></Parms>` },
+      { name: "GetStudentGradeHistory", params: `<Parms><Param id="childIntID">0</Param></Parms>` },
+      { name: "GetReportCard",          params: `<Parms><Param id="childIntID">0</Param></Parms>` },
+      { name: "GetStudentTranscript",   params: `<Parms/>` },
+    ];
+    for (const path of wsPaths) {
+      for (const { name: methodName, params } of wsMethods) {
+        try {
+          const wsRes = await fetch(`${base.replace("/SVUE","").replace(/\/SVUE$/,"")}${path}`, {
+            method: "POST",
+            headers: {
+              ...BROWSER_HEADERS,
+              "Content-Type": "application/json",
+              "Cookie": cookies,
+              "Referer": step2.url,
+            },
+            body: JSON.stringify({
+              userID: username, password, skipLoginLog: "true", parent: "false",
+              webServiceHandleName: "PXPWebServices", methodName, paramStr: params,
+            }),
+          });
+          let wsText = await wsRes.text();
+          if (wsText.trimStart().startsWith("{")) {
+            try { wsText = JSON.parse(wsText).d ?? wsText; } catch { /**/ }
+          }
+          debugLog.push(`WS ${methodName}: ${wsRes.status}, ${wsText.length} chars — ${wsText.slice(0,120).replace(/\n/g," ")}`);
+          if (wsText.includes("Course") || wsText.includes("TranscriptGroup")) {
+            const txCourses = parseWebServiceTranscript(wsText);
+            debugLog.push(`  WS parsed ${txCourses.length} courses`);
+            if (txCourses.length > 0) {
+              return NextResponse.json({ courses: txCourses, debug: debugLog.join(" | ") });
+            }
+          }
+        } catch (e) {
+          debugLog.push(`WS ${methodName} error: ${e instanceof Error ? e.message : "err"}`);
+        }
+      }
+    }
+
+    // ── Step 4: Fetch home page to discover what pages actually exist ────────
     const homeUrl = step2.url; // Home_PXP2.aspx
     const homeRes = await fetch(homeUrl, {
       headers: { ...BROWSER_HEADERS, "Cookie": cookies },
