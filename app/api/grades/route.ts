@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { GradebookData, CourseGrade, Assignment, GradingCategory } from "@/lib/studentvue/types";
 
-// Synergy StudentVUE XML API — used by districts across the US
+// Known Synergy endpoint paths — tried in order until one works
+const SYNERGY_PATHS = [
+  "/PXP2_CommunicationWebServiceRest.asmx/ProcessWebServiceRequest",
+  "/Service/PXPCommunication.asmx/ProcessWebServiceRequest",
+  "/PXPCommunication.asmx/ProcessWebServiceRequest",
+  "/StudentVue/PXP2_CommunicationWebServiceRest.asmx/ProcessWebServiceRequest",
+  "/StudentVue/Service/PXPCommunication.asmx/ProcessWebServiceRequest",
+];
+
 async function fetchStudentVueGradebook(
   districtUrl: string,
   username: string,
   password: string
 ): Promise<GradebookData> {
   const base = districtUrl.replace(/\/$/, "");
-  const endpoint = `${base}/Service/PXPCommunication.asmx/ProcessWebServiceRequest`;
 
   const xmlParam = `<Parms><Param id="childIntID">0</Param></Parms>`;
-
   const body = new URLSearchParams({
     userID: username,
     password: password,
@@ -20,56 +26,31 @@ async function fetchStudentVueGradebook(
     webServiceHandleName: "PXPWebServices",
     methodName: "Gradebook",
     paramStr: xmlParam,
-  });
+  }).toString();
 
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.5",
-      "Origin": base,
-      "Referer": `${base}/`,
-    },
-    body: body.toString(),
-  });
+  const headers = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": base,
+    "Referer": `${base}/`,
+  };
 
-  if (!res.ok) {
-    // Try alternate path used by some Synergy deployments
-    if (res.status === 404) {
-      const altEndpoint = `${base}/PXP2_CommunicationWebServiceRest.asmx/ProcessWebServiceRequest`;
-      const res2 = await fetch(altEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Origin": base,
-          "Referer": `${base}/`,
-        },
-        body: body.toString(),
-      });
-      if (!res2.ok) {
-        throw new Error(`Could not connect to your school's grading system (HTTP ${res2.status}). Check that your district is correct.`);
-      }
-      const xml2 = await res2.text();
-      if (xml2.includes("Invalid user id or password") || xml2.includes("Login Failed")) {
-        throw new Error("Invalid username or password");
-      }
-      return parseGradebook(xml2);
+  let lastStatus = 0;
+  for (const path of SYNERGY_PATHS) {
+    const res = await fetch(`${base}${path}`, { method: "POST", headers, body });
+    if (res.status === 404 || res.status === 405) { lastStatus = res.status; continue; }
+    if (!res.ok) throw new Error(`Could not connect to your school's grading system (HTTP ${res.status}). Make sure your district is selected correctly.`);
+
+    const xml = await res.text();
+    if (xml.includes("Invalid user id or password") || xml.includes("Login Failed") || xml.includes("AuthFailed")) {
+      throw new Error("Wrong username or password. Double-check your StudentVUE credentials.");
     }
-    throw new Error(`Could not connect to your school's grading system (HTTP ${res.status}). Check that your district is correct.`);
+    return parseGradebook(xml);
   }
 
-  const xml = await res.text();
-
-  // Check for login error
-  if (xml.includes("Invalid user id or password") || xml.includes("Login Failed")) {
-    throw new Error("Invalid username or password");
-  }
-
-  return parseGradebook(xml);
+  throw new Error(`Could not find your school's grade portal (tried ${SYNERGY_PATHS.length} paths, last HTTP ${lastStatus}). Your district URL may be incorrect.`);
 }
 
 // Minimal XML parser — pulls out attributes without a heavy dependency
