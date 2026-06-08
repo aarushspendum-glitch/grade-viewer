@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { detectCourseType, shouldExclude, type GPACourse } from "@/lib/gpa-configs";
 
-// Scrapes the StudentVUE *browser* web app to get transcript/grade history.
-// Flow: GET login page → extract hidden fields → POST credentials → get session
-// cookie → fetch transcript page → parse HTML table rows.
-
 function letterToMidpoint(letter: string): number | null {
   const map: Record<string, number> = {
     "A+": 99, "A": 95, "A-": 91,
     "B+": 88, "B": 85, "B-": 81,
     "C+": 78, "C": 75, "C-": 71,
     "D+": 68, "D": 65, "D-": 61,
-    "F": 50, "E": 50, "P": 95, "WP": 70,
+    "F": 50, "E": 50, "P": 95,
   };
   return map[letter.trim().toUpperCase()] ?? null;
 }
@@ -22,110 +18,112 @@ function extractHidden(html: string, name: string): string {
   return m ? m[1] : "";
 }
 
-function extractCookies(headers: Headers): string {
-  const raw = headers.getSetCookie?.() ?? [];
-  if (raw.length) return raw.map(c => c.split(";")[0]).join("; ");
-  // fallback for older Node
-  const single = headers.get("set-cookie") ?? "";
-  return single.split(",").map(c => c.trim().split(";")[0]).join("; ");
+function getCookies(headers: Headers): string {
+  try {
+    const raw = headers.getSetCookie();
+    if (raw?.length) return raw.map(c => c.split(";")[0]).join("; ");
+  } catch { /* older Node fallback */ }
+  return (headers.get("set-cookie") ?? "").split(",").map(c => c.trim().split(";")[0]).join("; ");
 }
 
-async function getWithCookies(url: string, cookie: string): Promise<{ html: string; cookies: string }> {
-  const res = await fetch(url, {
-    headers: {
-      "Cookie": cookie,
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-    redirect: "follow",
-  });
-  const html = await res.text();
-  const newCookies = extractCookies(res.headers);
-  const merged = mergeCookies(cookie, newCookies);
-  return { html, cookies: merged };
-}
-
-function mergeCookies(existing: string, incoming: string): string {
+function mergeCookies(a: string, b: string): string {
   const map: Record<string, string> = {};
-  for (const part of (existing + "; " + incoming).split(";")) {
-    const [k, v] = part.trim().split("=");
-    if (k && v !== undefined) map[k.trim()] = v.trim();
+  for (const part of `${a}; ${b}`.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx < 1) continue;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    if (k) map[k] = v;
   }
   return Object.entries(map).map(([k, v]) => `${k}=${v}`).join("; ");
 }
 
-// Parse grade history from Synergy HTML — handles multiple table formats
-function parseGradeHistoryHtml(html: string): GPACourse[] {
+const BROWSER_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
+function parseTranscriptHtml(html: string, debugLog: string[]): GPACourse[] {
   const courses: GPACourse[] = [];
-
-  // Strategy 1: Look for transcript table rows
-  // Typical format: <tr class="..."> <td>Course Name</td> <td>Credits</td> <td>Grade</td> <td>Year</td> </tr>
-
-  // Extract all <tr> blocks
-  const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) ?? [];
-
   let currentYear = "";
 
-  for (const row of rows) {
-    // Detect year header rows (e.g. "Grade 9 (2022-2023)" or "2022-23")
-    const yearMatch = row.match(/(\d{4}[-–]\d{2,4})/);
-    if (yearMatch) {
-      const raw = yearMatch[1].replace("–", "-");
-      // Normalize to "YYYY-YY" format
-      const parts = raw.split("-");
-      if (parts[0].length === 4) {
-        const yr = parseInt(parts[0]);
-        const suffix = parts[1].length === 4 ? String(parseInt(parts[1])).slice(2) : parts[1];
-        currentYear = `${yr}-${suffix}`;
-      }
-    }
+  // Split HTML into rows
+  const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map(m => m[0]);
+  debugLog.push(`Rows found: ${rows.length}`);
 
-    // Extract <td> text content
+  for (const row of rows) {
+    // Strip inner tags to get text per cell
     const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
-      .map(m => m[1].replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim());
+      .map(m => m[1]
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/\s+/g, " ")
+        .trim()
+      )
+      .filter(c => c.length > 0);
+
+    if (cells.length === 0) continue;
+
+    // Detect a year-group header row — contains a school year pattern
+    const fullRow = cells.join(" ");
+    const yearMatch = fullRow.match(/(\d{4})\s*[-–]\s*(\d{2,4})/);
+    if (yearMatch) {
+      const yr = parseInt(yearMatch[1]);
+      const suffix = yearMatch[2].length === 4 ? yearMatch[2].slice(2) : yearMatch[2];
+      currentYear = `${yr}-${suffix}`;
+      debugLog.push(`Year group found: ${currentYear}`);
+      continue;
+    }
 
     if (cells.length < 2) continue;
 
-    // Try to find course name, grade, credits from cells
-    let name = "", gradeStr = "", creditStr = "";
+    // Try to identify columns: usually [CourseTitle, ..., Credits, Grade]
+    // or [CourseTitle, Grade, Credits, ...]
+    let name = "";
+    let gradeStr = "";
+    let creditStr = "";
 
-    // Look for a cell that looks like a course name (long text, not a number)
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i];
-      if (cell.length > 4 && isNaN(parseFloat(cell)) && !cell.match(/^\d+[\/-]\d+/)) {
-        if (!name && !shouldExclude(cell)) { name = cell; continue; }
+    for (const cell of cells) {
+      // Course name: long text, not numeric, not short code
+      if (!name && cell.length > 5 && isNaN(parseFloat(cell)) && !/^\d/.test(cell) && !shouldExclude(cell)) {
+        name = cell;
+        continue;
       }
-      // Credit: small number 0.5–2
-      if (!creditStr && cell.match(/^[0-9]+\.?[05]?$/) && parseFloat(cell) <= 4) {
-        creditStr = cell; continue;
+      // Letter grade: A, B+, C-, etc.
+      if (!gradeStr && /^[ABCDFPW][+-]?$/.test(cell)) {
+        gradeStr = cell;
+        continue;
       }
-      // Grade: letter or percentage
-      if (!gradeStr && (cell.match(/^[ABCDF][+-]?$/) || cell.match(/^\d{1,3}\.?\d*%?$/))) {
-        gradeStr = cell; continue;
+      // Numeric grade: 85, 92.4, etc. (between 50-100)
+      if (!gradeStr) {
+        const n = parseFloat(cell.replace("%", ""));
+        if (!isNaN(n) && n >= 50 && n <= 100) { gradeStr = String(n); continue; }
+      }
+      // Credits: 0.5, 1, 1.5 etc.
+      if (!creditStr) {
+        const n = parseFloat(cell);
+        if (!isNaN(n) && n > 0 && n <= 4 && cell.match(/^\d+\.?\d*$/)) { creditStr = cell; continue; }
       }
     }
 
-    if (!name) continue;
+    if (!name || !gradeStr) continue;
 
     let grade: number | null = null;
     const pct = parseFloat(gradeStr.replace("%", ""));
-    if (!isNaN(pct) && pct > 0) {
-      grade = pct;
-    } else if (gradeStr) {
-      grade = letterToMidpoint(gradeStr);
-    }
-    if (!grade || grade <= 0) continue;
+    if (!isNaN(pct) && pct >= 50) grade = pct;
+    else grade = letterToMidpoint(gradeStr);
 
-    const credits = parseFloat(creditStr) || 1;
-    const year = currentYear || "Prior";
+    if (!grade) continue;
 
     courses.push({
-      id: `${name}-${year}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `${name}-${currentYear}-${Math.random().toString(36).slice(2, 6)}`,
       name,
       grade,
-      credits,
+      credits: parseFloat(creditStr) || 1,
       type: detectCourseType(name),
-      year,
+      year: currentYear || "Prior",
       excluded: shouldExclude(name),
     });
   }
@@ -143,115 +141,98 @@ export async function POST(request: NextRequest) {
   const debugLog: string[] = [];
 
   try {
-    // ── Step 1: GET the login page to grab hidden form fields + initial cookies ──
-    const loginUrl = `${base}/PXP2_Login.aspx`;
-    debugLog.push(`GET ${loginUrl}`);
+    // ── Step 1: GET login page (follow redirect to _Student_OVR page) ─────────
+    const loginBase = `${base}/PXP2_Login.aspx`;
+    const step1 = await fetch(loginBase, { headers: BROWSER_HEADERS, redirect: "follow" });
+    const loginHtml = await step1.text();
+    let cookies = getCookies(step1.headers);
+    const finalLoginUrl = step1.url; // e.g. .../PXP2_Login_Student_OVR.aspx?regenerateSessionId=true
 
-    const loginPageRes = await fetch(loginUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      redirect: "follow",
-    });
+    debugLog.push(`Login page: ${step1.status} → ${finalLoginUrl}`);
+    debugLog.push(`Cookies after GET: ${cookies.slice(0, 120)}`);
 
-    const loginHtml = await loginPageRes.text();
-    let cookies = extractCookies(loginPageRes.headers);
-    debugLog.push(`Login page status: ${loginPageRes.status}, cookies: ${cookies.slice(0, 80)}`);
-    debugLog.push(`Login page length: ${loginHtml.length}`);
-
-    // Extract hidden fields (ASP.NET ViewState etc.)
-    const viewState = extractHidden(loginHtml, "__VIEWSTATE");
+    const viewState      = extractHidden(loginHtml, "__VIEWSTATE");
+    const viewStateGen   = extractHidden(loginHtml, "__VIEWSTATEGENERATOR");
     const eventValidation = extractHidden(loginHtml, "__EVENTVALIDATION");
-    const viewStateGen = extractHidden(loginHtml, "__VIEWSTATEGENERATOR");
+    debugLog.push(`ViewState length: ${viewState.length}`);
 
-    // Find the username/password input names
-    const userInputName = loginHtml.match(/name="(ctl\w*UserName|txtUserName|tbUsername|username)"[^>]*type="text"/i)?.[1]
-      || loginHtml.match(/type="text"[^>]*name="(ctl\w*UserName|txtUserName|tbUsername|username)"/i)?.[1]
-      || "ctl00$MainContent$username";
-    const passInputName = loginHtml.match(/name="(ctl\w*Password|txtPassword|tbPassword|password)"[^>]*type="password"/i)?.[1]
-      || loginHtml.match(/type="password"[^>]*name="(ctl\w*Password|txtPassword|tbPassword|password)"/i)?.[1]
-      || "ctl00$MainContent$password";
-    const submitName = loginHtml.match(/name="(ctl\w*LoginBtn|btnLogin|login[Bb]tn)"[^>]*type="submit"/i)?.[1]
-      || "ctl00$MainContent$LoginButton";
-
-    debugLog.push(`Form fields: user=${userInputName} pass=${passInputName} submit=${submitName}`);
-
-    // ── Step 2: POST login form ────────────────────────────────────────────────
-    const formData = new URLSearchParams({
-      __VIEWSTATE: viewState,
-      __EVENTVALIDATION: eventValidation,
-      __VIEWSTATEGENERATOR: viewStateGen,
-      [userInputName]: username,
-      [passInputName]: password,
-      [submitName]: "Login",
+    // ── Step 2: POST credentials to the FINAL (redirected) login URL ──────────
+    const formBody = new URLSearchParams({
+      __VIEWSTATE:           viewState,
+      __VIEWSTATEGENERATOR:  viewStateGen,
+      __EVENTVALIDATION:     eventValidation,
+      "ctl00$MainContent$username": username,
+      "ctl00$MainContent$password": password,
+      "ctl00$MainContent$Submit1":  "Login",
     });
 
-    const loginPostRes = await fetch(loginUrl, {
+    const step2 = await fetch(finalLoginUrl, {
       method: "POST",
       headers: {
+        ...BROWSER_HEADERS,
         "Content-Type": "application/x-www-form-urlencoded",
         "Cookie": cookies,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
-        "Referer": loginUrl,
+        "Referer": finalLoginUrl,
         "Origin": base,
       },
-      body: formData.toString(),
+      body: formBody.toString(),
       redirect: "follow",
     });
 
-    const loginPostHtml = await loginPostRes.text();
-    cookies = mergeCookies(cookies, extractCookies(loginPostRes.headers));
-    debugLog.push(`POST login status: ${loginPostRes.status}, url: ${loginPostRes.url}`);
+    const postHtml = await step2.text();
+    cookies = mergeCookies(cookies, getCookies(step2.headers));
+    debugLog.push(`POST login: ${step2.status} → ${step2.url}`);
+    debugLog.push(`Cookies after POST: ${cookies.slice(0, 200)}`);
 
-    // Check if login failed
-    if (loginPostHtml.includes("Invalid") || loginPostHtml.includes("incorrect") || loginPostHtml.toLowerCase().includes("login failed")) {
-      return NextResponse.json({ error: "Invalid credentials", debug: debugLog.join(" | ") }, { status: 401 });
+    if (postHtml.toLowerCase().includes("invalid") || step2.url.includes("Login")) {
+      debugLog.push(`Login may have failed — still on login page or invalid msg`);
     }
 
-    if (!cookies.includes("ASP.NET_SessionId") && !cookies.includes("PXP") && loginPostRes.url.includes("Login")) {
-      debugLog.push(`May not be logged in — redirected back to login? html snippet: ${loginPostHtml.slice(0, 200)}`);
-    }
-
-    // ── Step 3: Try known transcript/grade history URLs ───────────────────────
-    const transcriptUrls = [
+    // ── Step 3: Fetch transcript / grade history pages ─────────────────────────
+    const pageUrls = [
       `${base}/PXP2_Transcript.aspx`,
       `${base}/PXP2_GradeHistory.aspx`,
       `${base}/PXP2_Transcript.aspx?AGU=0`,
       `${base}/PXP2_ReportCards.aspx`,
     ];
 
-    let bestHtml = "";
-    let bestCourseCount = 0;
+    let bestCourses: GPACourse[] = [];
+    let bestHtmlSnippet = "";
 
-    for (const url of transcriptUrls) {
+    for (const url of pageUrls) {
       try {
-        const { html } = await getWithCookies(url, cookies);
-        debugLog.push(`GET ${url.split("/").pop()}: ${html.length} chars`);
-        const courses = parseGradeHistoryHtml(html);
-        debugLog.push(`  → parsed ${courses.length} courses`);
-        if (courses.length > bestCourseCount) {
-          bestCourseCount = courses.length;
-          bestHtml = html;
+        const res = await fetch(url, {
+          headers: { ...BROWSER_HEADERS, "Cookie": cookies, "Referer": step2.url },
+          redirect: "follow",
+        });
+        const html = await res.text();
+        debugLog.push(`${url.split("/").pop()}: ${res.status}, ${html.length} chars`);
+
+        // If redirected back to login, skip
+        if (res.url.includes("Login")) { debugLog.push("  → redirected to login (not authenticated)"); continue; }
+
+        const parsed = parseTranscriptHtml(html, debugLog);
+        debugLog.push(`  → parsed ${parsed.length} courses`);
+
+        if (parsed.length > bestCourses.length) {
+          bestCourses = parsed;
+          bestHtmlSnippet = html.slice(0, 2000);
         }
       } catch (e) {
         debugLog.push(`  → error: ${e instanceof Error ? e.message : "failed"}`);
       }
     }
 
-    if (bestCourseCount === 0) {
-      // Return debug so we can see what the pages look like
+    if (bestCourses.length === 0) {
       return NextResponse.json({
         courses: [],
-        error: "Logged in but could not parse transcript. Check debug.",
+        error: "Logged in but no transcript courses found.",
         debug: debugLog.join(" | "),
-        htmlSnippet: bestHtml.slice(0, 1000),
+        htmlSnippet: bestHtmlSnippet.slice(0, 1500),
       });
     }
 
-    const courses = parseGradeHistoryHtml(bestHtml);
-    return NextResponse.json({ courses, debug: debugLog.join(" | ") });
+    return NextResponse.json({ courses: bestCourses, debug: debugLog.join(" | ") });
 
   } catch (err) {
     return NextResponse.json({
