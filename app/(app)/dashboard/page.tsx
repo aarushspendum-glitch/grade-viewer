@@ -19,20 +19,11 @@ function getGreeting(): string {
   return "Good evening";
 }
 
-const TIPS = [
-  "Remember: an extra study session before a test can add 5–10% to your score.",
-  "Tip: Use the GPA tab to see how your current grades affect your cumulative GPA.",
-  "You've got this. Consistent effort beats cramming every time.",
-  "Check your Schoology calendar for upcoming deadlines in the Calendar tab.",
-  "Connect your Schoology calendar to stay on top of assignments.",
-];
-
 export default function DashboardPage() {
   const router = useRouter();
   const { name, avatarId } = useUser();
   const [gradebook, setGradebook] = useState<GradebookData | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<CalEvent[]>([]);
-  const [tip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
 
   const displayName = name; // only use the name the user set in Settings, never the login ID
 
@@ -64,10 +55,6 @@ export default function DashboardPage() {
   if (!gradebook) return null;
 
   const visibleCourses = gradebook.courses.filter(c => !shouldExclude(c.name));
-  const gradedCourses  = visibleCourses.filter(c => c.grade !== null);
-  const avgGrade = gradedCourses.length > 0
-    ? gradedCourses.reduce((s, c) => s + c.grade!, 0) / gradedCourses.length
-    : null;
 
   const typeColors: Record<CalEvent["type"], string> = {
     test:       "bg-red-100 text-red-700",
@@ -89,9 +76,6 @@ export default function DashboardPage() {
             </h1>
             <p className="text-sm text-gray-400 mt-0.5">
               {gradebook.reportingPeriod} · {visibleCourses.length} classes
-              {avgGrade !== null && (
-                <span className="ml-2 text-gray-500">· avg {avgGrade.toFixed(1)}%</span>
-              )}
             </p>
           </div>
         </div>
@@ -104,46 +88,37 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* ── Quick widgets row ── */}
-      <div className="grid grid-cols-2 gap-4 mb-7">
-        {/* Tip card */}
-        <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-5 py-4 flex items-start gap-3">
-          <span className="text-2xl flex-shrink-0 mt-0.5">💡</span>
-          <p className="text-sm text-indigo-700 leading-relaxed">{tip}</p>
-        </div>
-
-        {/* Upcoming events or connect prompt */}
-        {upcomingEvents.length > 0 ? (
-          <Link href="/calendar" className="bg-white border border-gray-100 rounded-xl px-5 py-4 hover:shadow-md transition-shadow block">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Coming up</p>
-              <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
-            </div>
-            <div className="flex flex-col gap-2">
-              {upcomingEvents.map(ev => (
-                <div key={ev.uid} className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${typeColors[ev.type]}`}>
-                    {ev.type === "test" ? "TEST" : ev.type === "assignment" ? "HW" : "EVENT"}
-                  </span>
-                  <span className="text-xs text-gray-700 truncate">{ev.title}</span>
-                  <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">
-                    {new Date(ev.start.slice(0,10) + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Link>
-        ) : (
-          <Link href="/calendar" className="bg-white border border-dashed border-gray-200 rounded-xl px-5 py-4 hover:bg-gray-50 transition-colors flex items-center gap-3">
-            <Calendar className="w-5 h-5 text-gray-300 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-gray-500">Connect Schoology calendar</p>
-              <p className="text-xs text-gray-400 mt-0.5">See upcoming assignments &amp; tests here</p>
-            </div>
-            <ArrowRight className="w-4 h-4 text-gray-300 ml-auto flex-shrink-0" />
-          </Link>
-        )}
-      </div>
+      {/* ── Upcoming events widget ── */}
+      {upcomingEvents.length > 0 ? (
+        <Link href="/calendar" className="bg-white border border-gray-100 rounded-xl px-5 py-4 hover:shadow-md transition-shadow block mb-7">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Coming up</p>
+            <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+          </div>
+          <div className="flex flex-col gap-2">
+            {upcomingEvents.map(ev => (
+              <div key={ev.uid} className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${typeColors[ev.type]}`}>
+                  {ev.type === "test" ? "TEST" : ev.type === "assignment" ? "HW" : "EVENT"}
+                </span>
+                <span className="text-xs text-gray-700 truncate">{ev.title}</span>
+                <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">
+                  {new Date(ev.start.slice(0,10) + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Link>
+      ) : (
+        <Link href="/calendar" className="bg-white border border-dashed border-gray-200 rounded-xl px-5 py-4 hover:bg-gray-50 transition-colors flex items-center gap-3 mb-7">
+          <Calendar className="w-5 h-5 text-gray-300 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-gray-500">Connect Schoology calendar</p>
+            <p className="text-xs text-gray-400 mt-0.5">See upcoming assignments &amp; tests here</p>
+          </div>
+          <ArrowRight className="w-4 h-4 text-gray-300 ml-auto flex-shrink-0" />
+        </Link>
+      )}
 
       {/* ── Course grid ── */}
       <div className="flex items-center justify-between mb-4">

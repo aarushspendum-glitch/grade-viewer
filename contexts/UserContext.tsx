@@ -97,21 +97,23 @@ export type AvatarId = (typeof AVATARS)[number]["id"];
 
 // ── Color themes ──────────────────────────────────────────────────────────────
 export const THEMES = {
-  indigo:  { name: "Indigo",  swatch: "#4F46E5", css: null },
-  violet:  { name: "Violet",  swatch: "#7C3AED", css: buildCss("violet",  "#f5f3ff","#ede9fe","#ddd6fe","#a78bfa","#8b5cf6","#7c3aed","#6d28d9","#5b21b6") },
-  blue:    { name: "Blue",    swatch: "#2563EB", css: buildCss("blue",    "#eff6ff","#dbeafe","#bfdbfe","#60a5fa","#3b82f6","#2563eb","#1d4ed8","#1e40af") },
-  emerald: { name: "Emerald", swatch: "#059669", css: buildCss("emerald", "#ecfdf5","#d1fae5","#a7f3d0","#34d399","#10b981","#059669","#047857","#065f46") },
-  rose:    { name: "Rose",    swatch: "#E11D48", css: buildCss("rose",    "#fff1f2","#ffe4e6","#fecdd3","#fb7185","#f43f5e","#e11d48","#be123c","#9f1239") },
-  amber:   { name: "Amber",   swatch: "#D97706", css: buildCss("amber",   "#fffbeb","#fef3c7","#fde68a","#fbbf24","#f59e0b","#d97706","#b45309","#92400e") },
+  indigo:  { name: "Indigo",  swatch: "#4F46E5", css: buildCss("#f0f0ff","#f5f3ff","#ede9fe","#ddd6fe","#a78bfa","#8b5cf6","#4F46E5","#4338CA","#3730a3") },
+  violet:  { name: "Violet",  swatch: "#7C3AED", css: buildCss("#f3f0ff","#f5f3ff","#ede9fe","#ddd6fe","#a78bfa","#8b5cf6","#7c3aed","#6d28d9","#5b21b6") },
+  blue:    { name: "Blue",    swatch: "#2563EB", css: buildCss("#f0f5ff","#eff6ff","#dbeafe","#bfdbfe","#60a5fa","#3b82f6","#2563eb","#1d4ed8","#1e40af") },
+  emerald: { name: "Emerald", swatch: "#059669", css: buildCss("#f0fdf7","#ecfdf5","#d1fae5","#a7f3d0","#34d399","#10b981","#059669","#047857","#065f46") },
+  rose:    { name: "Rose",    swatch: "#E11D48", css: buildCss("#fff0f2","#fff1f2","#ffe4e6","#fecdd3","#fb7185","#f43f5e","#e11d48","#be123c","#9f1239") },
+  amber:   { name: "Amber",   swatch: "#D97706", css: buildCss("#fffbee","#fffbeb","#fef3c7","#fde68a","#fbbf24","#f59e0b","#d97706","#b45309","#92400e") },
 } as const;
 export type ThemeId = keyof typeof THEMES;
 
 function buildCss(
-  _id: string,
+  pageBg: string,
   c50: string, c100: string, c200: string, c400: string,
   c500: string, c600: string, c700: string, c800: string
 ): string {
   return [
+    `body{background-color:${pageBg}!important}`,
+    `.bg-gray-50{background-color:${pageBg}!important}`,
     `.bg-indigo-50{background-color:${c50}!important}`,
     `.bg-indigo-100{background-color:${c100}!important}`,
     `.bg-indigo-200{background-color:${c200}!important}`,

@@ -27,8 +27,14 @@ export default function Sidebar() {
     <aside className="w-52 flex-shrink-0 flex flex-col bg-white border-r border-gray-100 py-5 px-3">
       {/* Logo */}
       <div className="flex items-center gap-2 mb-5 px-2">
-        <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-white text-xs font-bold">U</span>
+        {/* Ascending bars mark */}
+        <div className="w-7 h-7 rounded-lg flex-shrink-0 overflow-hidden"
+          style={{ background: "linear-gradient(135deg, #4F46E5, #7C3AED)" }}>
+          <svg viewBox="0 0 28 28" width="28" height="28">
+            <rect x="4"  y="17" width="5" height="7"  rx="1.5" fill="rgba(255,255,255,0.5)"/>
+            <rect x="11" y="12" width="5" height="12" rx="1.5" fill="rgba(255,255,255,0.75)"/>
+            <rect x="18" y="6"  width="5" height="18" rx="1.5" fill="white"/>
+          </svg>
         </div>
         <span className="font-bold text-gray-900 tracking-tight">UpGrade</span>
         <span className="text-[10px] font-medium bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full ml-auto">FCPS</span>
