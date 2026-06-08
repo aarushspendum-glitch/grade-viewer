@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import type { GradebookData, CourseGrade, Assignment, GradingCategory } from "@/lib/studentvue/types";
 
-// Synergy StudentVUE XML API — used by FCPS, LCPS, PWCS, and most Virginia districts
+// Synergy StudentVUE XML API — used by districts across the US
 async function fetchStudentVueGradebook(
   districtUrl: string,
   username: string,
@@ -127,10 +126,6 @@ function parseGradebook(xml: string): GradebookData {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   const { username, password, districtUrl } = await request.json();
   if (!username || !password || !districtUrl) {
     return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
@@ -138,32 +133,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const gradebook = await fetchStudentVueGradebook(districtUrl, username, password);
-
-    // Save district + username (never the password)
-    await supabase.from("user_settings").upsert({
-      user_id: user.id,
-      district_url: districtUrl,
-      stu_username: username,
-    });
-
     return NextResponse.json(gradebook);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to fetch grades";
     return NextResponse.json({ error: message }, { status: 500 });
   }
-}
-
-export async function GET() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data } = await supabase
-    .from("cached_grades")
-    .select("*")
-    .eq("user_id", user.id)
-    .single();
-
-  if (!data) return NextResponse.json({ error: "No cached grades" }, { status: 404 });
-  return NextResponse.json(data.gradebook);
 }

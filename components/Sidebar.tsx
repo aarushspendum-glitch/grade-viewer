@@ -3,23 +3,20 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, Calculator, Edit3, LogOut, BookOpen } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 
 const NAV = [
-  { href: "/dashboard", label: "Grades", icon: LayoutDashboard },
-  { href: "/gpa", label: "GPA", icon: Calculator },
-  { href: "/what-if", label: "What-If", icon: Edit3 },
+  { href: "/dashboard", label: "Grades",     icon: LayoutDashboard },
+  { href: "/gpa",       label: "GPA",        icon: Calculator },
+  { href: "/what-if",   label: "What-If",    icon: Edit3 },
 ];
 
-export default function Sidebar({ userEmail }: { userEmail: string }) {
+export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const supabase = createClient();
 
-  async function signOut() {
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+  function signOut() {
+    sessionStorage.clear();
+    router.push("/");
   }
 
   return (
@@ -28,7 +25,7 @@ export default function Sidebar({ userEmail }: { userEmail: string }) {
         <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
           <BookOpen className="w-3.5 h-3.5 text-white" />
         </div>
-        <span className="font-semibold text-gray-900 tracking-tight">GradeView</span>
+        <span className="font-bold text-gray-900 tracking-tight">UpGrade</span>
       </div>
 
       <nav className="flex flex-col gap-0.5 flex-1">
@@ -52,7 +49,6 @@ export default function Sidebar({ userEmail }: { userEmail: string }) {
       </nav>
 
       <div className="border-t border-gray-100 pt-3 mt-3">
-        <p className="text-xs text-gray-400 px-3 mb-2 truncate">{userEmail}</p>
         <button
           onClick={signOut}
           className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-50 w-full transition-colors"

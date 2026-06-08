@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Save, Edit3, X, Check } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Check } from "lucide-react";
 
 interface AssignmentOverride {
-  courseId: string;
   courseName: string;
-  assignmentId: string;
   assignmentName: string;
   originalScore: number | null;
   whatIfScore: number;
@@ -17,88 +15,88 @@ interface Scenario {
   id: string;
   name: string;
   overrides: AssignmentOverride[];
-  created_at: string;
+}
+
+const STORAGE_KEY = "upgrade_what_if";
+
+function loadScenarios(): Scenario[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+  } catch { return []; }
+}
+
+function saveScenarios(scenarios: Scenario[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(scenarios));
 }
 
 export default function WhatIfPage() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [activeScenario, setActiveScenario] = useState<Scenario | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [addingOverride, setAddingOverride] = useState(false);
   const [draft, setDraft] = useState<Partial<AssignmentOverride>>({});
 
-  useEffect(() => { fetchScenarios(); }, []);
+  useEffect(() => { setScenarios(loadScenarios()); }, []);
 
-  async function fetchScenarios() {
-    const res = await fetch("/api/what-if");
-    if (res.ok) setScenarios(await res.json());
+  const active = scenarios.find((s) => s.id === activeId) ?? null;
+
+  function update(updated: Scenario[]) {
+    setScenarios(updated);
+    saveScenarios(updated);
   }
 
-  async function createScenario() {
+  function createScenario() {
     if (!newName.trim()) return;
-    const res = await fetch("/api/what-if", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName.trim(), overrides: [] }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setScenarios((p) => [data, ...p]);
-      setActiveScenario(data);
-      setNewName("");
-      setCreating(false);
-    }
+    const s: Scenario = { id: Date.now().toString(), name: newName.trim(), overrides: [] };
+    const next = [s, ...scenarios];
+    update(next);
+    setActiveId(s.id);
+    setNewName("");
+    setCreating(false);
   }
 
-  async function save() {
-    if (!activeScenario) return;
-    setSaving(true);
-    await fetch("/api/what-if", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: activeScenario.id, name: activeScenario.name, overrides: activeScenario.overrides }),
-    });
-    setSaving(false);
-    fetchScenarios();
+  function deleteScenario(id: string) {
+    update(scenarios.filter((s) => s.id !== id));
+    if (activeId === id) setActiveId(null);
   }
 
-  async function deleteScenario(id: string) {
-    await fetch(`/api/what-if?id=${id}`, { method: "DELETE" });
-    setScenarios((p) => p.filter((s) => s.id !== id));
-    if (activeScenario?.id === id) setActiveScenario(null);
-  }
-
-  function confirmOverride() {
-    if (!activeScenario) return;
-    const override: AssignmentOverride = {
-      courseId: draft.courseId ?? "custom",
-      courseName: draft.courseName ?? "Custom Class",
-      assignmentId: String(Date.now()),
+  function addOverride() {
+    if (!active) return;
+    const o: AssignmentOverride = {
+      courseName: draft.courseName ?? "Class",
       assignmentName: draft.assignmentName ?? "Assignment",
       originalScore: draft.originalScore ?? null,
       whatIfScore: draft.whatIfScore ?? 0,
       maxScore: draft.maxScore ?? 100,
     };
-    setActiveScenario({ ...activeScenario, overrides: [...activeScenario.overrides, override] });
+    const next = scenarios.map((s) =>
+      s.id === active.id ? { ...s, overrides: [...s.overrides, o] } : s
+    );
+    update(next);
     setDraft({});
     setAddingOverride(false);
   }
 
   function removeOverride(idx: number) {
-    if (!activeScenario) return;
-    setActiveScenario({ ...activeScenario, overrides: activeScenario.overrides.filter((_, i) => i !== idx) });
+    if (!active) return;
+    const next = scenarios.map((s) =>
+      s.id === active.id ? { ...s, overrides: s.overrides.filter((_, i) => i !== idx) } : s
+    );
+    update(next);
   }
 
-  // Per-class impact summary
-  const courseImpact = activeScenario
-    ? [...new Set(activeScenario.overrides.map((o) => o.courseName))].map((name) => {
-        const items = activeScenario.overrides.filter((o) => o.courseName === name);
+  const courseImpact = active
+    ? [...new Set(active.overrides.map((o) => o.courseName))].map((name) => {
+        const items = active.overrides.filter((o) => o.courseName === name);
         const totalMax = items.reduce((a, b) => a + b.maxScore, 0);
         const origTotal = items.filter((o) => o.originalScore !== null).reduce((a, b) => a + (b.originalScore ?? 0), 0);
         const whatIfTotal = items.reduce((a, b) => a + b.whatIfScore, 0);
-        return { name, orig: totalMax > 0 ? (origTotal / totalMax) * 100 : 0, whatIf: totalMax > 0 ? (whatIfTotal / totalMax) * 100 : 0 };
+        return {
+          name,
+          orig: totalMax > 0 ? (origTotal / totalMax) * 100 : 0,
+          whatIf: totalMax > 0 ? (whatIfTotal / totalMax) * 100 : 0,
+        };
       })
     : [];
 
@@ -107,7 +105,7 @@ export default function WhatIfPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">What-If Scenarios</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Model any hypothetical score — see how it changes your average before the test.
+          Model any score before it happens and see exactly how it shifts your average.
         </p>
       </div>
 
@@ -131,12 +129,8 @@ export default function WhatIfPage() {
                 placeholder="Name…"
                 className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
-              <button onClick={createScenario} className="text-emerald-500 hover:text-emerald-700">
-                <Check className="w-4 h-4" />
-              </button>
-              <button onClick={() => setCreating(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4" />
-              </button>
+              <button onClick={createScenario} className="text-emerald-500"><Check className="w-4 h-4" /></button>
+              <button onClick={() => setCreating(false)} className="text-gray-400"><X className="w-4 h-4" /></button>
             </div>
           )}
 
@@ -147,9 +141,9 @@ export default function WhatIfPage() {
             {scenarios.map((s) => (
               <div
                 key={s.id}
-                onClick={() => setActiveScenario(s)}
+                onClick={() => setActiveId(s.id)}
                 className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-                  activeScenario?.id === s.id
+                  activeId === s.id
                     ? "bg-indigo-50 text-indigo-700"
                     : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                 }`}
@@ -157,7 +151,7 @@ export default function WhatIfPage() {
                 <span className="text-sm font-medium truncate">{s.name}</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); deleteScenario(s.id); }}
-                  className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 ml-1 transition-all"
+                  className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 ml-1"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -168,23 +162,14 @@ export default function WhatIfPage() {
 
         {/* Main panel */}
         <div className="flex-1">
-          {!activeScenario ? (
+          {!active ? (
             <div className="flex flex-col items-center justify-center h-64 bg-white border border-gray-100 rounded-2xl shadow-sm text-center">
               <Edit3 className="w-8 h-8 text-gray-200 mb-3" />
               <p className="text-gray-400 text-sm">Select a scenario or create a new one</p>
             </div>
           ) : (
             <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-gray-900 text-lg">{activeScenario.name}</h2>
-                <button
-                  onClick={save}
-                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  {saving ? "Saving…" : "Save"}
-                </button>
-              </div>
+              <h2 className="font-semibold text-gray-900 text-lg">{active.name}</h2>
 
               {/* Impact cards */}
               {courseImpact.length > 0 && (
@@ -212,7 +197,7 @@ export default function WhatIfPage() {
                 </div>
               )}
 
-              {/* Overrides list */}
+              {/* Overrides */}
               <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-medium text-gray-900">Grade overrides</h3>
@@ -238,7 +223,7 @@ export default function WhatIfPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Assignment name</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Assignment</label>
                         <input
                           placeholder="e.g. Unit 3 Test"
                           value={draft.assignmentName ?? ""}
@@ -278,27 +263,17 @@ export default function WhatIfPage() {
                       </div>
                     </div>
                     <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => { setAddingOverride(false); setDraft({}); }}
-                        className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={confirmOverride}
-                        className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-1.5 rounded-lg"
-                      >
-                        Add
-                      </button>
+                      <button onClick={() => { setAddingOverride(false); setDraft({}); }} className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg">Cancel</button>
+                      <button onClick={addOverride} className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-1.5 rounded-lg">Add</button>
                     </div>
                   </div>
                 )}
 
-                {activeScenario.overrides.length === 0 && !addingOverride ? (
-                  <p className="text-sm text-gray-400">No overrides yet. Add an assignment to model.</p>
+                {active.overrides.length === 0 && !addingOverride ? (
+                  <p className="text-sm text-gray-400">No overrides yet. Add one above.</p>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {activeScenario.overrides.map((o, idx) => (
+                    {active.overrides.map((o, idx) => (
                       <div key={idx} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
                         <div>
                           <p className="text-sm font-medium text-gray-800">{o.assignmentName}</p>

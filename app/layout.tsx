@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "GradeView — A Better StudentVUE",
-  description: "View, analyze, and optimize your grades with a beautiful interface.",
+  title: "UpGrade",
+  description: "A better way to view and understand your grades.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
