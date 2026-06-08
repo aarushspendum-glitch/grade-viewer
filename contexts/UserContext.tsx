@@ -145,7 +145,7 @@ interface UserCtx {
 
 const Ctx = createContext<UserCtx>({
   name: "", setName: () => {},
-  avatarId: "lion", setAvatarId: () => {},
+  avatarId: "aurora", setAvatarId: () => {},
   themeId: "indigo", setThemeId: () => {},
 });
 
@@ -158,7 +158,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // Load from localStorage on mount
   useEffect(() => {
     setNameRaw(localStorage.getItem("upgrade_name") ?? "");
-    setAvatarIdRaw((localStorage.getItem("upgrade_avatar") as AvatarId) ?? "lion");
+    setAvatarIdRaw((localStorage.getItem("upgrade_avatar") as AvatarId) ?? "aurora");
     setThemeIdRaw((localStorage.getItem("upgrade_theme") as ThemeId) ?? "indigo");
   }, []);
 
