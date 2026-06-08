@@ -143,16 +143,16 @@ export default function CalendarPage() {
           <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 mb-4 text-sm text-indigo-800">
             <p className="font-medium mb-1">How to find your iCal URL:</p>
             <ol className="list-decimal list-inside space-y-1 text-indigo-700">
-              <li>Go to <a href="https://fcps.schoology.com" target="_blank" rel="noreferrer" className="underline font-medium">fcps.schoology.com</a></li>
-              <li>Click your profile photo → <strong>Settings</strong></li>
-              <li>Scroll to <strong>Notifications</strong> → <strong>Calendar</strong></li>
-              <li>Copy the iCal URL (looks like <code className="bg-indigo-100 px-1 rounded text-xs">…/ical/user/…/index.ics</code>)</li>
+              <li>Go to <a href="https://lms.fcps.edu" target="_blank" rel="noreferrer" className="underline font-medium">lms.fcps.edu</a> (Schoology)</li>
+              <li>Click your profile photo → <strong>Account Settings</strong></li>
+              <li>Scroll down to <strong>Share Your Calendar</strong></li>
+              <li>Copy the URL — it starts with <code className="bg-indigo-100 px-1 rounded text-xs">webcal://</code></li>
             </ol>
           </div>
 
           <form onSubmit={handleConnect} className="flex gap-2">
             <input value={inputUrl} onChange={e => setInputUrl(e.target.value)}
-              placeholder="https://app.schoology.com/ical/user/…/index.ics"
+              placeholder="webcal://lms.fcps.edu/calendar/feed/ical/…/ical.ics"
               className="flex-1 border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             <button type="submit" disabled={loading || !inputUrl.trim()}
               className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors flex-shrink-0">

@@ -94,21 +94,23 @@ export async function POST(request: NextRequest) {
   if (!icalUrl || typeof icalUrl !== "string") {
     return NextResponse.json({ error: "Missing icalUrl" }, { status: 400 });
   }
-  // Only allow Schoology or FCPS domains for safety
+  // Convert webcal:// → https:// and validate domain
+  let fetchUrl = icalUrl.replace(/^webcal:\/\//i, "https://");
   try {
-    const parsed = new URL(icalUrl);
-    const ok = ["schoology.com", "fcps.schoology.com", "app.schoology.com"].some(d =>
+    const parsed = new URL(fetchUrl);
+    const ok = ["schoology.com", "fcps.edu", "lms.fcps.edu"].some(d =>
       parsed.hostname === d || parsed.hostname.endsWith("." + d)
     );
     if (!ok) {
-      return NextResponse.json({ error: "Only Schoology calendar URLs are supported." }, { status: 400 });
+      return NextResponse.json({ error: "Only Schoology or FCPS calendar URLs are supported." }, { status: 400 });
     }
+    fetchUrl = parsed.toString();
   } catch {
     return NextResponse.json({ error: "Invalid URL." }, { status: 400 });
   }
 
   try {
-    const res = await fetch(icalUrl, {
+    const res = await fetch(fetchUrl, {
       headers: { "User-Agent": "UpGrade/1.0 (FCPS grade viewer)" },
       signal: AbortSignal.timeout(10000),
     });
