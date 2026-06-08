@@ -24,12 +24,42 @@ async function fetchStudentVueGradebook(
 
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.5",
+      "Origin": base,
+      "Referer": `${base}/`,
+    },
     body: body.toString(),
   });
 
   if (!res.ok) {
-    throw new Error(`StudentVUE returned HTTP ${res.status}`);
+    // Try alternate path used by some Synergy deployments
+    if (res.status === 404) {
+      const altEndpoint = `${base}/PXP2_CommunicationWebServiceRest.asmx/ProcessWebServiceRequest`;
+      const res2 = await fetch(altEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Origin": base,
+          "Referer": `${base}/`,
+        },
+        body: body.toString(),
+      });
+      if (!res2.ok) {
+        throw new Error(`Could not connect to your school's grading system (HTTP ${res2.status}). Check that your district is correct.`);
+      }
+      const xml2 = await res2.text();
+      if (xml2.includes("Invalid user id or password") || xml2.includes("Login Failed")) {
+        throw new Error("Invalid username or password");
+      }
+      return parseGradebook(xml2);
+    }
+    throw new Error(`Could not connect to your school's grading system (HTTP ${res.status}). Check that your district is correct.`);
   }
 
   const xml = await res.text();
