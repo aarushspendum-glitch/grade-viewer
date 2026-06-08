@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Target, ChevronDown, ChevronUp, Loader2, Save } from "lucide-react";
+import { Plus, Trash2, Target, ChevronDown, ChevronUp, Loader2, Save, ClipboardPaste } from "lucide-react";
 import {
   GPA_CONFIGS, getConfig, calculateDistrictGPA, detectCourseType, shouldExclude, pctToLetter,
   type GPACourse, type CourseType,
@@ -51,7 +51,46 @@ export default function GPAPage() {
   const [useWeighted, setUseWeighted] = useState(true);
   const [showOptimizer, setShowOptimizer] = useState(false);
   const [collapsedYears, setCollapsedYears] = useState<Set<string>>(new Set());
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteYear, setPasteYear] = useState("2024-25");
+  const [pasteText, setPasteText] = useState("");
+  const [pasteError, setPasteError] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Parse pasted text: one course per line, "Course Name   95" or "Course Name  A"
+  function parsePasteText(text: string, year: string): GPACourse[] {
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+    const result: GPACourse[] = [];
+    for (const line of lines) {
+      // Split on tab or multiple spaces
+      const parts = line.split(/\t|  +/).map(p => p.trim()).filter(Boolean);
+      if (parts.length < 2) continue;
+      const name = parts[0];
+      if (shouldExclude(name)) continue;
+      const gradeRaw = parts[parts.length - 1].replace("%","");
+      const letterMap: Record<string,number> = {
+        "A+":99,"A":95,"A-":91,"B+":88,"B":85,"B-":81,
+        "C+":78,"C":75,"C-":71,"D+":68,"D":65,"D-":61,"F":50
+      };
+      let grade = parseFloat(gradeRaw);
+      if (isNaN(grade)) grade = letterMap[gradeRaw.toUpperCase()] ?? 0;
+      if (!grade || grade <= 0) continue;
+      result.push({ id: uid(), name, grade, credits: 1, type: detectCourseType(name), year, excluded: false });
+    }
+    return result;
+  }
+
+  function applyPaste() {
+    const parsed = parsePasteText(pasteText, pasteYear);
+    if (parsed.length === 0) { setPasteError("Couldn't read any courses. Make sure each line has a name and a grade separated by a tab or spaces."); return; }
+    setCourses(p => {
+      const existing = p.filter(c => c.year !== pasteYear);
+      return [...existing, ...parsed];
+    });
+    setShowPaste(false);
+    setPasteText("");
+    setPasteError("");
+  }
 
   const config = getConfig(districtId);
   const { unweighted, weighted, totalCredits } = calculateDistrictGPA(courses, config);
@@ -208,6 +247,47 @@ export default function GPAPage() {
           </div>
         </div>
       )}
+
+      {/* Bulk paste */}
+      <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-800">Paste previous year grades</p>
+            <p className="text-xs text-gray-400 mt-0.5">Copy from StudentVUE → paste here. No manual typing needed.</p>
+          </div>
+          <button onClick={() => setShowPaste(!showPaste)}
+            className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors ${showPaste ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+            <ClipboardPaste className="w-3.5 h-3.5" />
+            {showPaste ? "Cancel" : "Paste grades"}
+          </button>
+        </div>
+        {showPaste && (
+          <div className="mt-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span className="font-medium">School year:</span>
+              <select value={pasteYear} onChange={e => setPasteYear(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                {PAST_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <p className="text-xs text-gray-400">
+              In StudentVUE, go to <strong>Grade History</strong>, select the year, then copy the table (<kbd className="bg-gray-100 px-1 rounded">Ctrl+A</kbd> then <kbd className="bg-gray-100 px-1 rounded">Ctrl+C</kbd>) and paste below. Or just type one course per line: <code className="bg-gray-100 px-1 rounded text-xs">AP Biology  92</code>
+            </p>
+            <textarea
+              value={pasteText}
+              onChange={e => { setPasteText(e.target.value); setPasteError(""); }}
+              rows={8}
+              placeholder={"AP Biology\t92\nHonors English 9\t88\nAlgebra 2 HN\t95\n..."}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+            />
+            {pasteError && <p className="text-xs text-red-500">{pasteError}</p>}
+            <button onClick={applyPaste}
+              className="self-start bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              Import {pasteText.split("\n").filter(l => l.trim()).length} courses
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Course table */}
       <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-4">
