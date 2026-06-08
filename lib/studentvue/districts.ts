@@ -7,7 +7,7 @@ export interface District {
 
 export const DISTRICTS: District[] = [
   // Virginia
-  { id: "fcps",      name: "Fairfax County Public Schools",      state: "VA", url: "https://sis.fcps.edu" },
+  { id: "fcps",      name: "Fairfax County Public Schools",      state: "VA", url: "https://sisstudent.fcps.edu/SVUE" },
   { id: "lcps",      name: "Loudoun County Public Schools",      state: "VA", url: "https://portal.lcps.org/" },
   { id: "pwcs",      name: "Prince William County Schools",      state: "VA", url: "https://sis.pwcs.edu/" },
   { id: "aps",       name: "Arlington Public Schools",           state: "VA", url: "https://sis.apsva.us/" },
