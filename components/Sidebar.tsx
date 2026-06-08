@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Calculator, Edit3, LogOut, GraduationCap } from "lucide-react";
+import { LayoutDashboard, Calculator, Edit3, LogOut, BookOpen } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/gpa", label: "GPA Calculator", icon: Calculator },
+  { href: "/dashboard", label: "Grades", icon: LayoutDashboard },
+  { href: "/gpa", label: "GPA", icon: Calculator },
   { href: "/what-if", label: "What-If", icon: Edit3 },
 ];
 
@@ -23,42 +23,42 @@ export default function Sidebar({ userEmail }: { userEmail: string }) {
   }
 
   return (
-    <aside className="w-56 flex-shrink-0 flex flex-col bg-slate-900 border-r border-slate-800 py-6 px-4">
-      <div className="flex items-center gap-2 mb-8 px-2">
-        <div className="bg-violet-500/20 rounded-lg p-1.5">
-          <GraduationCap className="w-5 h-5 text-violet-400" />
+    <aside className="w-52 flex-shrink-0 flex flex-col bg-white border-r border-gray-100 py-5 px-3">
+      <div className="flex items-center gap-2 mb-6 px-2">
+        <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
+          <BookOpen className="w-3.5 h-3.5 text-white" />
         </div>
-        <span className="font-bold text-white text-lg">GradeView</span>
+        <span className="font-semibold text-gray-900 tracking-tight">GradeView</span>
       </div>
 
-      <nav className="flex flex-col gap-1 flex-1">
+      <nav className="flex flex-col gap-0.5 flex-1">
         {NAV.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(href + "/");
           return (
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 active
-                  ? "bg-violet-600/20 text-violet-300 border border-violet-600/30"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800"
+                  ? "bg-indigo-50 text-indigo-700"
+                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className={`w-4 h-4 ${active ? "text-indigo-600" : ""}`} />
               {label}
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t border-slate-800 pt-4 mt-4">
-        <p className="text-xs text-slate-500 px-3 mb-3 truncate">{userEmail}</p>
+      <div className="border-t border-gray-100 pt-3 mt-3">
+        <p className="text-xs text-gray-400 px-3 mb-2 truncate">{userEmail}</p>
         <button
           onClick={signOut}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 w-full transition-colors"
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-50 w-full transition-colors"
         >
           <LogOut className="w-4 h-4" />
-          Sign Out
+          Sign out
         </button>
       </div>
     </aside>
