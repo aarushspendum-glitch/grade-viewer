@@ -92,7 +92,9 @@ export default function GPAPage() {
         setSource("transcript");
         setTranscriptNote(`Loaded ${data.courses.length} courses from your transcript.`);
       } else {
-        setTranscriptNote(data.error ?? "No transcript data available. Your district may not support this yet.");
+        const note = data.error ?? "No transcript data available.";
+        const debug = data.debug ? ` | Raw: ${data.debug.slice(0, 200)}` : "";
+        setTranscriptNote(note + debug);
       }
     } catch {
       setTranscriptNote("Could not fetch transcript.");
