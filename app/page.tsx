@@ -37,6 +37,9 @@ export default function HomePage() {
       // Store grades in sessionStorage so other pages can read them
       sessionStorage.setItem("gradebook", JSON.stringify(data));
       sessionStorage.setItem("district", districtId);
+      sessionStorage.setItem("districtUrl", district.url);
+      sessionStorage.setItem("username", username);
+      sessionStorage.setItem("password", password);
       router.push("/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
