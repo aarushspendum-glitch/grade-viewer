@@ -1,41 +1,34 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Calendar, ExternalLink, Loader2, RefreshCw, AlertCircle, BookOpen, FlaskConical, ClipboardList, Star } from "lucide-react";
+import {
+  Calendar, ExternalLink, Loader2, RefreshCw, AlertCircle,
+  BookOpen, FlaskConical, ClipboardList, Star, ChevronLeft, ChevronRight,
+} from "lucide-react";
 import type { CalEvent } from "@/app/api/schoology-ical/route";
 
 const ICAL_KEY = "upgrade_schoology_ical_url";
 
-function groupByDay(events: CalEvent[]): Map<string, CalEvent[]> {
-  const map = new Map<string, CalEvent[]>();
-  for (const ev of events) {
-    const day = ev.start.slice(0, 10); // YYYY-MM-DD
-    if (!map.has(day)) map.set(day, []);
-    map.get(day)!.push(ev);
+const TYPE_CONFIG: Record<CalEvent["type"], {
+  label: string; icon: React.ElementType;
+  color: string; bg: string; dot: string; pill: string;
+}> = {
+  test:       { label: "Test / Quiz", icon: FlaskConical,  color: "text-red-700",    bg: "bg-red-50",    dot: "bg-red-500",    pill: "bg-red-100 text-red-700 border-red-200" },
+  assignment: { label: "Assignment",  icon: ClipboardList, color: "text-indigo-700", bg: "bg-indigo-50", dot: "bg-indigo-500", pill: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+  event:      { label: "Event",       icon: Star,          color: "text-amber-700",  bg: "bg-amber-50",  dot: "bg-amber-500",  pill: "bg-amber-100 text-amber-700 border-amber-200" },
+  other:      { label: "Other",       icon: BookOpen,      color: "text-gray-600",   bg: "bg-gray-50",   dot: "bg-gray-400",   pill: "bg-gray-100 text-gray-600 border-gray-200" },
+};
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS   = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function toLocalDay(isoStr: string): string {
+  // For all-day events the date portion is correct; for timed events convert to local
+  if (isoStr.endsWith("Z")) {
+    const d = new Date(isoStr);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   }
-  return new Map([...map.entries()].sort());
-}
-
-function formatDay(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00");
-  const today = new Date();
-  today.setHours(12, 0, 0, 0);
-  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
-  const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
-  const dateLabel = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  if (diff === 0) return `Today — ${dateLabel}`;
-  if (diff === 1) return `Tomorrow — ${dateLabel}`;
-  if (diff === -1) return `Yesterday — ${dateLabel}`;
-  return `${weekday} — ${dateLabel}`;
-}
-
-function isToday(dateStr: string): boolean {
-  const today = new Date().toISOString().slice(0, 10);
-  return dateStr === today;
-}
-
-function isPast(dateStr: string): boolean {
-  return dateStr < new Date().toISOString().slice(0, 10);
+  return isoStr.slice(0, 10);
 }
 
 function formatTime(isoStr: string, allDay: boolean): string {
@@ -44,28 +37,22 @@ function formatTime(isoStr: string, allDay: boolean): string {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-const TYPE_CONFIG: Record<CalEvent["type"], { label: string; icon: React.ElementType; color: string; bg: string; dot: string }> = {
-  test:       { label: "Test / Quiz", icon: FlaskConical,  color: "text-red-600",    bg: "bg-red-50 border-red-100",    dot: "bg-red-500" },
-  assignment: { label: "Assignment",  icon: ClipboardList, color: "text-indigo-600", bg: "bg-indigo-50 border-indigo-100", dot: "bg-indigo-500" },
-  event:      { label: "Event",       icon: Star,          color: "text-amber-600",  bg: "bg-amber-50 border-amber-100",  dot: "bg-amber-500" },
-  other:      { label: "Other",       icon: BookOpen,      color: "text-gray-600",   bg: "bg-gray-50 border-gray-100",    dot: "bg-gray-400" },
-};
-
 export default function CalendarPage() {
-  const [icalUrl, setIcalUrl] = useState("");
-  const [inputUrl, setInputUrl] = useState("");
-  const [events, setEvents] = useState<CalEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [showPast, setShowPast] = useState(false);
-  const [filterType, setFilterType] = useState<CalEvent["type"] | "all">("all");
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
+  const [icalUrl, setIcalUrl]     = useState("");
+  const [inputUrl, setInputUrl]   = useState("");
+  const [events, setEvents]       = useState<CalEvent[]>([]);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState("");
+  const [viewYear, setViewYear]   = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
+  const [selectedDay, setSelectedDay] = useState<string>(todayStr);
 
   useEffect(() => {
     const saved = localStorage.getItem(ICAL_KEY);
-    if (saved) {
-      setIcalUrl(saved);
-      setInputUrl(saved);
-    }
+    if (saved) { setIcalUrl(saved); setInputUrl(saved); }
   }, []);
 
   const fetchCalendar = useCallback(async (url: string) => {
@@ -99,19 +86,44 @@ export default function CalendarPage() {
     fetchCalendar(inputUrl.trim());
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const filtered = events
-    .filter(ev => filterType === "all" || ev.type === filterType)
-    .filter(ev => showPast || ev.start.slice(0, 10) >= today);
-  const grouped = groupByDay(filtered);
+  // Build event map keyed by local date string
+  const eventsByDay = new Map<string, CalEvent[]>();
+  for (const ev of events) {
+    const day = toLocalDay(ev.start);
+    if (!eventsByDay.has(day)) eventsByDay.set(day, []);
+    eventsByDay.get(day)!.push(ev);
+  }
 
-  // Stats
-  const upcoming = events.filter(ev => ev.start.slice(0, 10) >= today);
-  const testCount = upcoming.filter(e => e.type === "test").length;
+  // Calendar grid for current view month
+  const firstOfMonth = new Date(viewYear, viewMonth, 1);
+  const daysInMonth  = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const startDow     = firstOfMonth.getDay(); // 0=Sun
+  const cells: (string | null)[] = [
+    ...Array(startDow).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => {
+      const d = i + 1;
+      return `${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    }),
+  ];
+  // Pad to full weeks
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewYear(y => y-1); setViewMonth(11); }
+    else setViewMonth(m => m-1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewYear(y => y+1); setViewMonth(0); }
+    else setViewMonth(m => m+1);
+  }
+
+  const selectedEvents = selectedDay ? (eventsByDay.get(selectedDay) ?? []) : [];
+  const upcoming = events.filter(ev => toLocalDay(ev.start) >= todayStr);
+  const testCount   = upcoming.filter(e => e.type === "test").length;
   const assignCount = upcoming.filter(e => e.type === "assignment").length;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-8 max-w-5xl mx-auto">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -127,7 +139,7 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {/* Connect card — shown if no URL saved yet */}
+      {/* Connect card */}
       {!icalUrl && (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 mb-6">
           <div className="flex items-center gap-3 mb-4">
@@ -139,7 +151,6 @@ export default function CalendarPage() {
               <p className="text-sm text-gray-500">Paste your personal iCal URL to see assignments and tests.</p>
             </div>
           </div>
-
           <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 mb-4 text-sm text-indigo-800">
             <p className="font-medium mb-1">How to find your iCal URL:</p>
             <ol className="list-decimal list-inside space-y-1 text-indigo-700">
@@ -149,7 +160,6 @@ export default function CalendarPage() {
               <li>Copy the URL — it starts with <code className="bg-indigo-100 px-1 rounded text-xs">webcal://</code></li>
             </ol>
           </div>
-
           <form onSubmit={handleConnect} className="flex gap-2">
             <input value={inputUrl} onChange={e => setInputUrl(e.target.value)}
               placeholder="webcal://lms.fcps.edu/calendar/feed/ical/…/ical.ics"
@@ -164,7 +174,7 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Stats row */}
+      {/* Stats cards */}
       {icalUrl && events.length > 0 && (
         <div className="grid grid-cols-3 gap-4 mb-5">
           <div className="bg-white border border-gray-100 rounded-xl shadow-sm px-5 py-4">
@@ -173,7 +183,7 @@ export default function CalendarPage() {
             <p className="text-xs text-gray-400 mt-1">events total</p>
           </div>
           <div className="bg-red-50 border border-red-100 rounded-xl shadow-sm px-5 py-4">
-            <p className="text-xs font-medium text-red-400 uppercase tracking-wide mb-1">Tests & Quizzes</p>
+            <p className="text-xs font-medium text-red-400 uppercase tracking-wide mb-1">Tests &amp; Quizzes</p>
             <p className="text-3xl font-bold text-red-600 tabular-nums">{testCount}</p>
             <p className="text-xs text-red-400 mt-1">coming up</p>
           </div>
@@ -185,28 +195,6 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Filters */}
-      {icalUrl && events.length > 0 && (
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {(["all", "test", "assignment", "event", "other"] as const).map(f => (
-            <button key={f} onClick={() => setFilterType(f)}
-              className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors capitalize border ${
-                filterType === f
-                  ? "bg-indigo-600 text-white border-indigo-600"
-                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"
-              }`}>
-              {f === "all" ? "All" : TYPE_CONFIG[f].label}
-            </button>
-          ))}
-          <label className="flex items-center gap-1.5 ml-auto text-xs text-gray-400 cursor-pointer select-none">
-            <input type="checkbox" checked={showPast} onChange={e => setShowPast(e.target.checked)}
-              className="w-3.5 h-3.5 accent-indigo-600" />
-            Show past
-          </label>
-        </div>
-      )}
-
-      {/* Error (when URL exists) */}
       {error && icalUrl && (
         <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
@@ -214,7 +202,6 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Loading skeleton */}
       {loading && (
         <div className="flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
           <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
@@ -222,65 +209,122 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Event list */}
+      {/* Calendar grid + day panel */}
       {!loading && icalUrl && (
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-          {grouped.size === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <Calendar className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-              <p className="text-sm font-medium">No upcoming events</p>
-              <p className="text-xs mt-1">
-                {filterType !== "all" ? "Try changing the filter." : showPast ? "Nothing found in your calendar." : "Turn on \"Show past\" to see previous events."}
-              </p>
-            </div>
-          ) : (
-            [...grouped.entries()].map(([day, dayEvents], dayIdx) => {
-              const past = isPast(day);
-              const todayDay = isToday(day);
-              return (
-                <div key={day} className={dayIdx > 0 ? "border-t border-gray-100" : ""}>
-                  {/* Day header */}
-                  <div className={`px-5 py-3 flex items-center gap-3 ${todayDay ? "bg-indigo-50" : past ? "bg-gray-50" : "bg-white"}`}>
-                    <span className={`text-sm font-semibold ${todayDay ? "text-indigo-700" : past ? "text-gray-400" : "text-gray-800"}`}>
-                      {formatDay(day)}
-                    </span>
-                    {todayDay && <span className="text-xs font-medium bg-indigo-600 text-white px-2 py-0.5 rounded-full">Today</span>}
-                    <span className="text-xs text-gray-400 ml-auto">{dayEvents.length} {dayEvents.length === 1 ? "item" : "items"}</span>
-                  </div>
+        <div className="grid grid-cols-[1fr_300px] gap-4 items-start">
 
-                  {/* Events */}
-                  {dayEvents.map(ev => {
-                    const tc = TYPE_CONFIG[ev.type];
-                    const Icon = tc.icon;
-                    return (
-                      <div key={ev.uid}
-                        className={`flex items-start gap-3 px-5 py-3.5 border-t border-gray-50 ${past ? "opacity-60" : ""}`}>
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 border ${tc.bg}`}>
-                          <Icon className={`w-3.5 h-3.5 ${tc.color}`} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${past ? "text-gray-500" : "text-gray-900"} truncate`}>{ev.title}</p>
-                          {ev.course && ev.course !== ev.title && (
-                            <p className="text-xs text-gray-400 truncate mt-0.5">{ev.course}</p>
-                          )}
-                        </div>
-                        <div className="flex-shrink-0 text-right">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${tc.bg} ${tc.color}`}>
+          {/* Monthly grid */}
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+            {/* Month nav */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-500">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <h2 className="font-semibold text-gray-900 text-sm">
+                {MONTHS[viewMonth]} {viewYear}
+              </h2>
+              <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-500">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Weekday headers */}
+            <div className="grid grid-cols-7 border-b border-gray-100">
+              {WEEKDAYS.map(d => (
+                <div key={d} className="text-center text-xs font-medium text-gray-400 py-2">{d}</div>
+              ))}
+            </div>
+
+            {/* Day cells */}
+            <div className="grid grid-cols-7">
+              {cells.map((dayStr, idx) => {
+                if (!dayStr) {
+                  return <div key={`empty-${idx}`} className="min-h-[72px] border-b border-r border-gray-50 last:border-r-0" />;
+                }
+                const dayEvents = eventsByDay.get(dayStr) ?? [];
+                const isToday = dayStr === todayStr;
+                const isSelected = dayStr === selectedDay;
+                const isPast = dayStr < todayStr;
+                const dayNum = parseInt(dayStr.slice(8));
+                // Dot colors: show up to 3 dots
+                const dots = dayEvents.slice(0, 3);
+
+                return (
+                  <button key={dayStr} onClick={() => setSelectedDay(dayStr)}
+                    className={`min-h-[72px] p-2 border-b border-r border-gray-50 last:border-r-0 flex flex-col items-start transition-colors text-left
+                      ${isSelected ? "bg-indigo-50" : "hover:bg-gray-50"}
+                      ${(idx + 1) % 7 === 0 ? "border-r-0" : ""}`}>
+                    <span className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full mb-1
+                      ${isToday ? "bg-indigo-600 text-white" : isSelected ? "text-indigo-700" : isPast ? "text-gray-300" : "text-gray-700"}`}>
+                      {dayNum}
+                    </span>
+                    <div className="flex flex-col gap-0.5 w-full">
+                      {dots.map((ev, i) => {
+                        const tc = TYPE_CONFIG[ev.type];
+                        return (
+                          <div key={i} className={`w-full text-left px-1 py-0.5 rounded text-[10px] font-medium truncate leading-tight ${tc.pill} border`}>
+                            {ev.title}
+                          </div>
+                        );
+                      })}
+                      {dayEvents.length > 3 && (
+                        <span className="text-[10px] text-gray-400 pl-1">+{dayEvents.length - 3} more</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Selected day panel */}
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden sticky top-4">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <p className="text-sm font-semibold text-gray-800">
+                {selectedDay
+                  ? new Date(selectedDay + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+                  : "Select a day"}
+              </p>
+              {selectedDay === todayStr && (
+                <span className="text-xs text-indigo-600 font-medium">Today</span>
+              )}
+            </div>
+
+            {selectedEvents.length === 0 ? (
+              <div className="px-4 py-8 text-center">
+                <p className="text-sm text-gray-400">No events</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50 max-h-[calc(100vh-340px)] overflow-y-auto">
+                {selectedEvents.map(ev => {
+                  const tc = TYPE_CONFIG[ev.type];
+                  const Icon = tc.icon;
+                  return (
+                    <div key={ev.uid} className="px-4 py-3 flex items-start gap-3">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${tc.bg}`}>
+                        <Icon className={`w-3.5 h-3.5 ${tc.color}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 leading-snug">{ev.title}</p>
+                        {ev.course && (
+                          <p className="text-xs text-indigo-500 font-medium mt-0.5 truncate">{ev.course}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${tc.pill}`}>
                             {tc.label}
                           </span>
-                          <p className="text-xs text-gray-400 mt-1">{formatTime(ev.start, ev.allDay)}</p>
+                          <span className="text-xs text-gray-400">{formatTime(ev.start, ev.allDay)}</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })
-          )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Change URL link */}
       {icalUrl && (
         <p className="text-xs text-gray-400 mt-4 text-center">
           Calendar URL saved to this browser.{" "}

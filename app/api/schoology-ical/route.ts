@@ -7,7 +7,7 @@ export interface CalEvent {
   start: string;   // ISO string
   end: string;     // ISO string
   allDay: boolean;
-  course: string;  // extracted from description/title
+  course: string;  // extracted from CATEGORIES / description / title
   type: "assignment" | "event" | "test" | "other";
 }
 
@@ -37,12 +37,18 @@ function detectType(title: string, desc: string): CalEvent["type"] {
   return "other";
 }
 
-function extractCourse(description: string, title: string): string {
-  // Schoology descriptions often start with the course name before a newline or dash
-  const m = description.match(/^([^\n\r|–\-]{3,60?})[\n\r|–\-]/);
-  if (m) return m[1].trim();
-  // Fall back to first word group in title
-  return title.split(":")[0].trim() || "";
+function extractCourse(description: string, title: string, categories: string): string {
+  // 1. CATEGORIES field — Schoology often puts the course name here
+  if (categories && categories.trim().length > 2) return categories.trim();
+  // 2. Description first line (Schoology puts course name before first \n)
+  const firstLine = description.split(/\\n|\n/)[0].trim();
+  if (firstLine && firstLine.length > 2 && firstLine.length < 80 && firstLine !== title) {
+    return firstLine;
+  }
+  // 3. Title pattern "Course Name: Assignment Title"
+  const colonIdx = title.indexOf(":");
+  if (colonIdx > 3 && colonIdx < 50) return title.slice(0, colonIdx).trim();
+  return "";
 }
 
 function parseICal(text: string): CalEvent[] {
@@ -66,6 +72,7 @@ function parseICal(text: string): CalEvent[] {
     const uid = get("UID") || Math.random().toString(36).slice(2);
     const title = get("SUMMARY");
     const description = get("DESCRIPTION");
+    const categories = get("CATEGORIES");
     const dtstart = lines.find(l => /^DTSTART/i.test(l))?.replace(/^DTSTART[^:]*:/i, "") ?? "";
     const dtend   = lines.find(l => /^DTEND/i.test(l))?.replace(/^DTEND[^:]*:/i, "")   ?? "";
 
@@ -82,7 +89,7 @@ function parseICal(text: string): CalEvent[] {
       start: parseICalDate(dtstart),
       end: dtend ? parseICalDate(dtend) : parseICalDate(dtstart),
       allDay,
-      course: extractCourse(description, title),
+      course: extractCourse(description, title, categories),
       type: detectType(title, description),
     });
   }
