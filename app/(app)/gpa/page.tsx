@@ -166,7 +166,7 @@ export default function GPAPage() {
           <p className="text-4xl font-bold tabular-nums text-gray-900">{unweighted.toFixed(3)}</p>
           <p className="text-xs text-gray-400 mt-1">out of 4.0</p>
         </div>
-        <div className="bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm px-5 py-4">
+        <div className="bg-white border border-indigo-200 rounded-xl shadow-sm px-5 py-4">
           <p className="text-xs font-medium text-indigo-400 uppercase tracking-wide mb-1">Weighted</p>
           <p className="text-4xl font-bold tabular-nums text-indigo-700">{weighted.toFixed(3)}</p>
           <p className="text-xs text-indigo-400 mt-1">{config.name} · AP +{config.weights.AP} · HN +{config.weights.Honors}</p>

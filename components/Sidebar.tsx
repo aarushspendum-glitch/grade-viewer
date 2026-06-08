@@ -24,7 +24,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-52 flex-shrink-0 flex flex-col bg-white border-r border-gray-100 py-5 px-3">
+    <aside className="w-52 flex-shrink-0 flex flex-col bg-indigo-50 border-r border-indigo-100 py-5 px-3">
       {/* Logo */}
       <div className="flex items-center gap-2 mb-5 px-2">
         {/* Ascending bars mark */}
@@ -41,7 +41,7 @@ export default function Sidebar() {
       </div>
 
       {/* Avatar + name */}
-      <Link href="/settings" className="flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-gray-50 transition-colors mb-3 group">
+      <Link href="/settings" className="flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-white/60 transition-colors mb-3 group">
         <AvatarDisplay id={avatarId} size={34} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-800 truncate leading-tight">
@@ -51,7 +51,7 @@ export default function Sidebar() {
         </div>
       </Link>
 
-      <div className="h-px bg-gray-100 mb-3" />
+      <div className="h-px bg-indigo-100 mb-3" />
 
       {/* Nav */}
       <nav className="flex flex-col gap-0.5 flex-1">
@@ -60,7 +60,7 @@ export default function Sidebar() {
           return (
             <Link key={href} href={href}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                active ? "bg-indigo-50 text-indigo-700" : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
+                active ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-900 hover:bg-white/60"
               }`}>
               <Icon className={`w-4 h-4 ${active ? "text-indigo-600" : ""}`} />
               {label}
@@ -70,16 +70,16 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom: Settings + Sign out */}
-      <div className="border-t border-gray-100 pt-3 mt-3 flex flex-col gap-0.5">
+      <div className="border-t border-indigo-100 pt-3 mt-3 flex flex-col gap-0.5">
         <Link href="/settings"
           className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-            pathname === "/settings" ? "bg-indigo-50 text-indigo-700" : "text-gray-400 hover:text-gray-700 hover:bg-gray-50"
+            pathname === "/settings" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-white/60"
           }`}>
           <Settings className="w-4 h-4" />
           Settings
         </Link>
         <button onClick={signOut}
-          className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-50 w-full transition-colors">
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-white/60 w-full transition-colors">
           <LogOut className="w-4 h-4" />
           Sign out
         </button>
