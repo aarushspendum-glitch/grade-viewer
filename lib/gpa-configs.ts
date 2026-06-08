@@ -14,9 +14,8 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   // 10-point scale, AP/IB/DE +1.0, Honors +0.5
   fcps: {
     name: "Fairfax County Public Schools",
-    // 10-pt flat scale: A+/A/A- all = 4.0, B+/B/B- all = 3.0, etc.
+    // 10-pt flat scale: A/A- all = 4.0, B+/B/B- all = 3.0, etc. No A+.
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -38,7 +37,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   lcps: {
     name: "Loudoun County Public Schools",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -60,7 +58,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   pwcs: {
     name: "Prince William County Schools",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -82,7 +79,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   aps: {
     name: "Arlington Public Schools",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
