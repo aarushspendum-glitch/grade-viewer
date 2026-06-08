@@ -232,6 +232,15 @@ export function pctToPoints(pct: number, config: GPAConfig): number {
   return 0;
 }
 
+// Returns a representative percentage for a letter grade (midpoint of range)
+export function letterToMidPct(letter: string, config: GPAConfig): number {
+  const idx = config.scale.findIndex(r => r.letter === letter);
+  if (idx < 0) return 0;
+  const min = config.scale[idx].min;
+  const max = idx === 0 ? 100 : config.scale[idx - 1].min - 1;
+  return Math.round((min + max) / 2);
+}
+
 export function pctToLetter(pct: number, config: GPAConfig): string {
   for (const row of config.scale) {
     if (pct >= row.min) return row.letter;

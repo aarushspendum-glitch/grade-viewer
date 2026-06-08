@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Target, ChevronDown, ChevronUp, Loader2, Save, ClipboardPaste } from "lucide-react";
+import { Plus, Trash2, Target, ChevronDown, ChevronUp, Loader2, Save } from "lucide-react";
 import {
-  GPA_CONFIGS, getConfig, calculateDistrictGPA, detectCourseType, shouldExclude, pctToLetter,
-  type GPACourse, type CourseType,
+  GPA_CONFIGS, getConfig, calculateDistrictGPA, detectCourseType, shouldExclude,
+  letterToMidPct, type GPACourse, type CourseType,
 } from "@/lib/gpa-configs";
 import { optimizeGPA } from "@/lib/gpa";
 import type { GradebookData } from "@/lib/studentvue/types";
@@ -16,10 +16,9 @@ const STORAGE_KEY = "upgrade_past_courses";
 let _id = 1;
 function uid() { return String(_id++); }
 function blank(year: string): GPACourse {
-  return { id: uid(), name: "", grade: 90, credits: 1, type: "Regular", year };
+  return { id: uid(), name: "", grade: 95, credits: 1, type: "Regular", year };
 }
 
-// ── helpers ────────────────────────────────────────────────────────────────
 function loadPastFromStorage(): GPACourse[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -28,8 +27,7 @@ function loadPastFromStorage(): GPACourse[] {
   } catch { return []; }
 }
 function savePastToStorage(courses: GPACourse[]) {
-  const past = courses.filter(c => c.year !== "Current");
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(past));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(courses.filter(c => c.year !== "Current")));
 }
 function currentFromGradebook(): GPACourse[] {
   try {
@@ -51,91 +49,20 @@ export default function GPAPage() {
   const [useWeighted, setUseWeighted] = useState(true);
   const [showOptimizer, setShowOptimizer] = useState(false);
   const [collapsedYears, setCollapsedYears] = useState<Set<string>>(new Set());
-  const [showPaste, setShowPaste] = useState(false);
-  const [pasteYear, setPasteYear] = useState("2024-25");
-  const [pasteText, setPasteText] = useState("");
-  const [pasteError, setPasteError] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Parse pasted text: one course per line, "Course Name   95" or "Course Name  A"
-  function parsePasteText(text: string, year: string): GPACourse[] {
-    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-    const result: GPACourse[] = [];
-    for (const line of lines) {
-      // Split on tab or multiple spaces
-      const parts = line.split(/\t|  +/).map(p => p.trim()).filter(Boolean);
-      if (parts.length < 2) continue;
-      const name = parts[0];
-      if (shouldExclude(name)) continue;
-      const gradeRaw = parts[parts.length - 1].replace("%","");
-      const letterMap: Record<string,number> = {
-        "A+":99,"A":95,"A-":91,"B+":88,"B":85,"B-":81,
-        "C+":78,"C":75,"C-":71,"D+":68,"D":65,"D-":61,"F":50
-      };
-      let grade = parseFloat(gradeRaw);
-      if (isNaN(grade)) grade = letterMap[gradeRaw.toUpperCase()] ?? 0;
-      if (!grade || grade <= 0) continue;
-      result.push({ id: uid(), name, grade, credits: 1, type: detectCourseType(name), year, excluded: false });
-    }
-    return result;
-  }
-
-  function applyPaste() {
-    const parsed = parsePasteText(pasteText, pasteYear);
-    if (parsed.length === 0) { setPasteError("Couldn't read any courses. Make sure each line has a name and a grade separated by a tab or spaces."); return; }
-    setCourses(p => {
-      const existing = p.filter(c => c.year !== pasteYear);
-      return [...existing, ...parsed];
-    });
-    setShowPaste(false);
-    setPasteText("");
-    setPasteError("");
-  }
 
   const config = getConfig(districtId);
   const { unweighted, weighted, totalCredits } = calculateDistrictGPA(courses, config);
 
-  // On mount: try to scrape transcript, fall back to localStorage past courses
   useEffect(() => {
     const d = sessionStorage.getItem("district");
     if (d) setDistrictId(d);
-    loadAll();
-  }, []);
-
-  async function loadAll() {
-    setLoading(true);
     const current = currentFromGradebook();
-    const districtUrl = sessionStorage.getItem("districtUrl");
-    const username = sessionStorage.getItem("username");
-    const password = sessionStorage.getItem("password");
-
-    if (districtUrl && username && password) {
-      try {
-        const res = await fetch("/api/scrape-transcript", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password, districtUrl }),
-        });
-        const data = await res.json();
-        if (data.courses && data.courses.length > 0) {
-          // Merge: keep current live grades, add scraped past years
-          const pastScraped = (data.courses as GPACourse[]).filter(c => c.year !== "Current");
-          const seenKeys = new Set(current.map(c => c.name));
-          const deduped = pastScraped.filter(c => !seenKeys.has(c.name) || c.year !== "Current");
-          setCourses([...current, ...deduped.map(c => ({ ...c, id: uid() }))]);
-          setLoading(false);
-          return;
-        }
-      } catch { /* fall through */ }
-    }
-
-    // Fallback: use saved past courses from localStorage
     const past = loadPastFromStorage();
     setCourses([...current, ...past]);
     setLoading(false);
-  }
+  }, []);
 
-  // Auto-save past courses to localStorage whenever they change
   useEffect(() => {
     if (loading) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -151,14 +78,19 @@ export default function GPAPage() {
     setCollapsedYears(s => { const n = new Set(s); n.delete(year); return n; });
   }
   function addYearBatch(year: string) {
-    const existing = courses.filter(c => c.year === year);
-    if (existing.length > 0) { setCollapsedYears(s => { const n = new Set(s); n.delete(year); return n; }); return; }
+    if (courses.some(c => c.year === year)) {
+      setCollapsedYears(s => { const n = new Set(s); n.delete(year); return n; });
+      return;
+    }
     setCourses(p => [...p, ...Array.from({ length: 6 }, () => blank(year))]);
     setCollapsedYears(s => { const n = new Set(s); n.delete(year); return n; });
   }
   function remove(id: string) { setCourses(p => p.filter(c => c.id !== id)); }
   function update(id: string, patch: Partial<GPACourse>) {
     setCourses(p => p.map(c => c.id === id ? { ...c, ...patch } : c));
+  }
+  function setLetter(id: string, letter: string) {
+    update(id, { grade: letterToMidPct(letter, config) });
   }
   function toggleExclude(id: string) {
     setCourses(p => p.map(c => c.id === id ? { ...c, excluded: !c.excluded } : c));
@@ -172,7 +104,6 @@ export default function GPAPage() {
     if (b === "Current") return 1;
     return b.localeCompare(a);
   });
-
   const missingPastYears = PAST_YEARS.filter(y => !years.includes(y));
 
   const optimizerCourses = courses.filter(c => !c.excluded)
@@ -201,11 +132,8 @@ export default function GPAPage() {
             {saved && <span className="ml-2 text-emerald-500 inline-flex items-center gap-1"><Save className="w-3 h-3" />Saved</span>}
           </p>
         </div>
-        <select
-          value={districtId}
-          onChange={e => setDistrictId(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-        >
+        <select value={districtId} onChange={e => setDistrictId(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
           {Object.entries(GPA_CONFIGS).filter(([k]) => k !== "default").map(([k, v]) => (
             <option key={k} value={k}>{v.name}</option>
           ))}
@@ -248,48 +176,7 @@ export default function GPAPage() {
         </div>
       )}
 
-      {/* Bulk paste */}
-      <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 mb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-gray-800">Paste previous year grades</p>
-            <p className="text-xs text-gray-400 mt-0.5">Copy from StudentVUE → paste here. No manual typing needed.</p>
-          </div>
-          <button onClick={() => setShowPaste(!showPaste)}
-            className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors ${showPaste ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-            <ClipboardPaste className="w-3.5 h-3.5" />
-            {showPaste ? "Cancel" : "Paste grades"}
-          </button>
-        </div>
-        {showPaste && (
-          <div className="mt-4 flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <span className="font-medium">School year:</span>
-              <select value={pasteYear} onChange={e => setPasteYear(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                {PAST_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-            <p className="text-xs text-gray-400">
-              In StudentVUE, go to <strong>Grade History</strong>, select the year, then copy the table (<kbd className="bg-gray-100 px-1 rounded">Ctrl+A</kbd> then <kbd className="bg-gray-100 px-1 rounded">Ctrl+C</kbd>) and paste below. Or just type one course per line: <code className="bg-gray-100 px-1 rounded text-xs">AP Biology  92</code>
-            </p>
-            <textarea
-              value={pasteText}
-              onChange={e => { setPasteText(e.target.value); setPasteError(""); }}
-              rows={8}
-              placeholder={"AP Biology\t92\nHonors English 9\t88\nAlgebra 2 HN\t95\n..."}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
-            />
-            {pasteError && <p className="text-xs text-red-500">{pasteError}</p>}
-            <button onClick={applyPaste}
-              className="self-start bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-              Import {pasteText.split("\n").filter(l => l.trim()).length} courses
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Course table */}
+      {/* Courses */}
       <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-gray-900">All Courses</h2>
@@ -301,7 +188,7 @@ export default function GPAPage() {
 
         {courses.length === 0 && (
           <p className="text-sm text-gray-400 text-center py-8">
-            No courses. <a href="/" className="text-indigo-500 underline">Sign in</a> on the Grades page first.
+            No courses. <a href="/" className="text-indigo-500 underline">Sign in</a> first.
           </p>
         )}
 
@@ -314,7 +201,9 @@ export default function GPAPage() {
               <div key={year}>
                 <button onClick={() => toggleYear(year)} className="w-full flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-gray-700">{year === "Current" ? `Current (${new Date().getFullYear()}-${String(new Date().getFullYear()+1).slice(2)})` : year}</span>
+                    <span className="text-sm font-semibold text-gray-700">
+                      {year === "Current" ? `Current (${new Date().getFullYear()}-${String(new Date().getFullYear()+1).slice(2)})` : year}
+                    </span>
                     <span className="text-xs text-gray-400">{yc.filter(c => !c.excluded).length} courses</span>
                     <span className="text-xs font-medium text-indigo-500 tabular-nums">{w.toFixed(2)}W · {uw.toFixed(2)}UW</span>
                   </div>
@@ -323,40 +212,53 @@ export default function GPAPage() {
 
                 {!collapsed && (
                   <div>
-                    <div className="grid grid-cols-[1fr_58px_32px_74px_50px_42px_16px] gap-2 mb-1.5 px-1">
-                      {["Course", "Grade", "Ltr", "Type", "Credits", "Count", ""].map(h => (
+                    {/* Column headers */}
+                    <div className="grid grid-cols-[1fr_90px_80px_50px_42px_16px] gap-2 mb-1.5 px-1">
+                      {["Course", "Grade", "Type", "Credits", "Count", ""].map(h => (
                         <p key={h} className="text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</p>
                       ))}
                     </div>
-                    {yc.map(course => (
-                      <div key={course.id}
-                        className={`grid grid-cols-[1fr_58px_32px_74px_50px_42px_16px] gap-2 items-center mb-1.5 ${course.excluded ? "opacity-40" : ""}`}>
-                        <input value={course.name}
-                          onChange={e => update(course.id, { name: e.target.value, type: detectCourseType(e.target.value) })}
-                          placeholder="Course name"
-                          className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                        <input type="number" min={0} max={100} value={course.grade}
-                          onChange={e => update(course.id, { grade: parseFloat(e.target.value) || 0 })}
-                          className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center tabular-nums text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                        <p className={`text-sm font-semibold text-center ${course.grade >= config.scale[0].min ? "text-emerald-600" : course.grade >= config.scale[1].min ? "text-blue-600" : course.grade >= config.scale[2].min ? "text-amber-600" : "text-red-500"}`}>
-                          {pctToLetter(course.grade, config)}
-                        </p>
-                        <select value={course.type} onChange={e => update(course.id, { type: e.target.value as CourseType })}
-                          className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
-                          {COURSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                        <input type="number" min={0.5} max={2} step={0.5} value={course.credits}
-                          onChange={e => update(course.id, { credits: parseFloat(e.target.value) || 1 })}
-                          className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center tabular-nums text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                        <button onClick={() => toggleExclude(course.id)}
-                          className={`text-xs px-1.5 py-1 rounded font-medium transition-colors ${course.excluded ? "bg-gray-100 text-gray-400" : "bg-emerald-50 text-emerald-600 hover:bg-gray-100"}`}>
-                          {course.excluded ? "off" : "on"}
-                        </button>
-                        <button onClick={() => remove(course.id)} className="text-gray-300 hover:text-red-400 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+
+                    {yc.map(course => {
+                      const currentLetter = config.scale.find(r => course.grade >= r.min)?.letter ?? "A";
+                      return (
+                        <div key={course.id}
+                          className={`grid grid-cols-[1fr_90px_80px_50px_42px_16px] gap-2 items-center mb-1.5 ${course.excluded ? "opacity-40" : ""}`}>
+                          <input value={course.name}
+                            onChange={e => update(course.id, { name: e.target.value, type: detectCourseType(e.target.value) })}
+                            placeholder="Course name"
+                            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+
+                          {/* Letter grade dropdown — shows all grades in this district's scale */}
+                          <select value={currentLetter} onChange={e => setLetter(course.id, e.target.value)}
+                            className={`border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-semibold text-center focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white ${
+                              currentLetter.startsWith("A") ? "text-emerald-600" :
+                              currentLetter.startsWith("B") ? "text-blue-600" :
+                              currentLetter.startsWith("C") ? "text-amber-600" : "text-red-500"}`}>
+                            {config.scale.map(r => (
+                              <option key={r.letter} value={r.letter}>{r.letter}</option>
+                            ))}
+                          </select>
+
+                          <select value={course.type} onChange={e => update(course.id, { type: e.target.value as CourseType })}
+                            className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                            {COURSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+
+                          <input type="number" min={0.5} max={2} step={0.5} value={course.credits}
+                            onChange={e => update(course.id, { credits: parseFloat(e.target.value) || 1 })}
+                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center tabular-nums text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+
+                          <button onClick={() => toggleExclude(course.id)}
+                            className={`text-xs px-1.5 py-1 rounded font-medium transition-colors ${course.excluded ? "bg-gray-100 text-gray-400" : "bg-emerald-50 text-emerald-600 hover:bg-gray-100"}`}>
+                            {course.excluded ? "off" : "on"}
+                          </button>
+                          <button onClick={() => remove(course.id)} className="text-gray-300 hover:text-red-400 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
                     <button onClick={() => addCourse(year)}
                       className="mt-1 text-xs text-indigo-400 hover:text-indigo-600 flex items-center gap-1 transition-colors">
                       <Plus className="w-3 h-3" /> Add course to {year}
@@ -367,9 +269,8 @@ export default function GPAPage() {
             );
           })}
         </div>
-
         <p className="text-xs text-gray-400 mt-4 pt-3 border-t border-gray-100">
-          Past courses save automatically to this browser. "Count" = included in GPA — turn off for P/E, study hall, etc.
+          Past courses save automatically. "Count" = included in GPA — turn off for P/E, study hall, etc.
         </p>
       </div>
 
