@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { calculateGPA, optimizeGPA, percentToLetter, type Course } from "@/lib/gpa";
+import type { GradebookData } from "@/lib/studentvue/types";
 
 const COURSE_TYPES = ["Regular", "Honors", "AP", "IB", "DE"] as const;
 
@@ -11,18 +12,46 @@ function newCourse(): Course {
   return { id: String(nextId++), name: "", grade: 90, credits: 1, type: "Regular" };
 }
 
+function detectType(name: string): Course["type"] {
+  const n = name.toUpperCase();
+  if (n.includes(" AP") || n.startsWith("AP ") || n.includes("AP+")) return "AP";
+  if (n.includes(" IB") || n.startsWith("IB ")) return "IB";
+  if (n.includes(" DE") || n.includes("DUAL ENROLL")) return "DE";
+  if (n.includes(" HN") || n.includes("HONORS") || n.endsWith(" H")) return "Honors";
+  return "Regular";
+}
+
 export default function GPAPage() {
   const [courses, setCourses] = useState<Course[]>([newCourse()]);
   const [targetGPA, setTargetGPA] = useState("3.8");
   const [useWeighted, setUseWeighted] = useState(true);
   const [showOptimizer, setShowOptimizer] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  // Auto-populate from live grades in sessionStorage
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("gradebook");
+      if (!raw) return;
+      const gb: GradebookData = JSON.parse(raw);
+      const imported = gb.courses
+        .filter((c) => c.grade !== null)
+        .map((c) => ({
+          id: String(nextId++),
+          name: c.name,
+          grade: c.grade!,
+          credits: 1,
+          type: detectType(c.name),
+        }));
+      if (imported.length > 0) { setCourses(imported); setLoaded(true); }
+    } catch { /* no grades */ }
+  }, []);
 
   const { unweighted, weighted } = calculateGPA(courses);
+  const displayGPA = useWeighted ? weighted : unweighted;
   const suggestions = showOptimizer
     ? optimizeGPA({ courses, targetGPA: parseFloat(targetGPA), weighted: useWeighted })
     : [];
-
-  const displayGPA = useWeighted ? weighted : unweighted;
 
   function addCourse() { setCourses((p) => [...p, newCourse()]); }
   function removeCourse(id: string) { setCourses((p) => p.filter((c) => c.id !== id)); }
@@ -32,9 +61,13 @@ export default function GPAPage() {
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">GPA Calculator</h1>
-        <p className="text-sm text-gray-500 mt-1">Add your classes, then run the optimizer to hit your target.</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">GPA Calculator</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {loaded ? "Auto-filled from your grades — adjust types as needed." : "Add your classes below."}
+          </p>
+        </div>
       </div>
 
       {/* GPA display */}
@@ -47,76 +80,60 @@ export default function GPAPage() {
         <div className="bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm px-6 py-5">
           <p className="text-xs font-medium text-indigo-400 uppercase tracking-wide mb-1">Weighted</p>
           <p className="text-4xl font-bold tabular-nums text-indigo-700">{weighted.toFixed(3)}</p>
-          <p className="text-xs text-indigo-400 mt-1">with AP/Honors bonus</p>
+          <p className="text-xs text-indigo-400 mt-1">AP +1.0 · Honors/DE +0.5</p>
         </div>
       </div>
 
-      {/* Courses */}
+      {/* Courses table */}
       <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-gray-900">Courses</h2>
-          <button
-            onClick={addCourse}
-            className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add class
+          <button onClick={addCourse} className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+            <Plus className="w-3.5 h-3.5" /> Add class
           </button>
         </div>
 
-        {/* Column headers */}
-        <div className="grid grid-cols-[1fr_72px_56px_96px_80px_24px] gap-2 mb-2 px-1">
-          {["Class name", "Grade", "Letter", "Type", "Credits", ""].map((h) => (
+        <div className="grid grid-cols-[1fr_64px_40px_88px_64px_20px] gap-2 mb-2 px-1">
+          {["Class name", "Grade %", "Ltr", "Type", "Credits", ""].map((h) => (
             <p key={h} className="text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</p>
           ))}
         </div>
 
         <div className="flex flex-col gap-2">
           {courses.map((course) => (
-            <div key={course.id} className="grid grid-cols-[1fr_72px_56px_96px_80px_24px] gap-2 items-center">
+            <div key={course.id} className="grid grid-cols-[1fr_64px_40px_88px_64px_20px] gap-2 items-center">
               <input
                 value={course.name}
-                onChange={(e) => update(course.id, { name: e.target.value })}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  update(course.id, { name, type: detectType(name) });
+                }}
                 placeholder="e.g. AP Calculus BC"
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
               <input
-                type="number"
-                min={0}
-                max={100}
+                type="number" min={0} max={100}
                 value={course.grade}
                 onChange={(e) => update(course.id, { grade: parseInt(e.target.value) || 0 })}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-center tabular-nums text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
+                className="border border-gray-200 rounded-lg px-2 py-2 text-sm text-center tabular-nums text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
-              <div className="text-center">
-                <span className={`text-sm font-semibold ${
-                  course.grade >= 90 ? "text-emerald-600" :
-                  course.grade >= 80 ? "text-blue-600" :
-                  course.grade >= 70 ? "text-amber-600" : "text-red-500"
-                }`}>
-                  {percentToLetter(course.grade)}
-                </span>
-              </div>
+              <p className={`text-sm font-semibold text-center ${course.grade >= 90 ? "text-emerald-600" : course.grade >= 80 ? "text-blue-600" : course.grade >= 70 ? "text-amber-600" : "text-red-500"}`}>
+                {percentToLetter(course.grade)}
+              </p>
               <select
                 value={course.type}
                 onChange={(e) => update(course.id, { type: e.target.value as Course["type"] })}
-                className="border border-gray-200 rounded-lg px-2 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white transition-all"
+                className="border border-gray-200 rounded-lg px-2 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
               >
                 {COURSE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
               <input
-                type="number"
-                min={0.5}
-                max={2}
-                step={0.5}
+                type="number" min={0.5} max={2} step={0.5}
                 value={course.credits}
                 onChange={(e) => update(course.id, { credits: parseFloat(e.target.value) || 1 })}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-center tabular-nums text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
+                className="border border-gray-200 rounded-lg px-2 py-2 text-sm text-center tabular-nums text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
-              <button
-                onClick={() => removeCourse(course.id)}
-                className="text-gray-300 hover:text-red-400 transition-colors flex justify-center"
-              >
+              <button onClick={() => removeCourse(course.id)} className="text-gray-300 hover:text-red-400 transition-colors">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
@@ -129,15 +146,11 @@ export default function GPAPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-gray-900">GPA Optimizer</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Find the minimum boost needed to reach a target GPA.</p>
+            <p className="text-sm text-gray-500 mt-0.5">Find the smallest grade boost to hit your target.</p>
           </div>
           <button
             onClick={() => setShowOptimizer(!showOptimizer)}
-            className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
-              showOptimizer
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
+            className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${showOptimizer ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
           >
             {showOptimizer ? "Hide" : "Run optimizer"}
           </button>
@@ -149,61 +162,47 @@ export default function GPAPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Target GPA</label>
                 <input
-                  type="number"
-                  min={0}
-                  max={5}
-                  step={0.01}
+                  type="number" min={0} max={5} step={0.01}
                   value={targetGPA}
                   onChange={(e) => setTargetGPA(e.target.value)}
                   className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 tabular-nums"
                 />
               </div>
-              <div className="flex gap-1.5 mb-0">
-                <button
-                  onClick={() => setUseWeighted(false)}
-                  className={`text-sm px-3 py-2 rounded-lg font-medium transition-colors ${
-                    !useWeighted ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
-                >
-                  Unweighted
-                </button>
-                <button
-                  onClick={() => setUseWeighted(true)}
-                  className={`text-sm px-3 py-2 rounded-lg font-medium transition-colors ${
-                    useWeighted ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
-                >
-                  Weighted
-                </button>
+              <div className="flex gap-1.5">
+                {["Unweighted", "Weighted"].map((label) => {
+                  const isW = label === "Weighted";
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => setUseWeighted(isW)}
+                      className={`text-sm px-3 py-2 rounded-lg font-medium transition-colors ${useWeighted === isW ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             {displayGPA >= parseFloat(targetGPA) ? (
               <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium">
-                You already hit {targetGPA}. Nice work — try setting a higher target.
+                You already hit {targetGPA}. Try setting a higher target.
               </div>
             ) : suggestions.length === 0 ? (
               <p className="text-sm text-gray-400">No single-class improvement can reach that target. Try a lower goal.</p>
             ) : (
               <div className="flex flex-col gap-2">
                 <p className="text-sm text-gray-500 mb-1">
-                  Any of these single improvements would push your {useWeighted ? "weighted" : "unweighted"} GPA to {targetGPA}:
+                  Any one of these would push your {useWeighted ? "weighted" : "unweighted"} GPA to {targetGPA}:
                 </p>
                 {suggestions.map((s) => (
-                  <div
-                    key={s.courseId}
-                    className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
-                  >
-                    <span className="text-sm font-medium text-gray-800">
-                      {s.courseName || "Unnamed class"}
-                    </span>
+                  <div key={s.courseId} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
+                    <span className="text-sm font-medium text-gray-800">{s.courseName || "Unnamed"}</span>
                     <div className="flex items-center gap-2 text-sm">
                       <span className="text-gray-400 tabular-nums">{s.currentGrade}%</span>
                       <span className="text-gray-300">→</span>
                       <span className="text-indigo-600 font-semibold tabular-nums">{s.neededGrade}%</span>
-                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full tabular-nums">
-                        +{s.improvement}%
-                      </span>
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full tabular-nums">+{s.improvement}%</span>
                     </div>
                   </div>
                 ))}

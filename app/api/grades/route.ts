@@ -97,80 +97,75 @@ async function fetchStudentVueGradebook(
     : `Could not reach your school's grade portal. Check that your district is correct.`);
 }
 
-// Minimal XML parser — pulls out attributes without a heavy dependency
-function getAttr(xml: string, attr: string): string {
-  const match = xml.match(new RegExp(`${attr}="([^"]*)"`));
-  return match ? match[1] : "";
-}
-
-function getAllMatches(xml: string, tag: string): string[] {
-  const re = new RegExp(`<${tag}[^>]*/?>([\\s\\S]*?)</${tag}>|<${tag}[^/]*/?>`, "g");
-  const selfClose = new RegExp(`<${tag}([^/]*)/>`, "g");
-  const results: string[] = [];
-  let m;
-
-  // Self-closing tags
-  while ((m = selfClose.exec(xml)) !== null) {
-    results.push(m[0]);
+function getAttr(xml: string, ...attrs: string[]): string {
+  for (const attr of attrs) {
+    const m = xml.match(new RegExp(`(?:^|\\s)${attr}="([^"]*)"`, "i"));
+    if (m && m[1] !== "") return m[1];
   }
-
-  // Also try block tags
-  const blockRe = new RegExp(`<${tag}([\\s\\S]*?)>([\\s\\S]*?)<\\/${tag}>`, "g");
-  while ((m = blockRe.exec(xml)) !== null) {
-    results.push(m[0]);
-  }
-
-  return results;
+  return "";
 }
 
 function parseGradebook(xml: string): GradebookData {
-  // Extract reporting period
-  const reportingPeriod = getAttr(xml, "ReportPeriod") || "Current Period";
+  const reportingPeriod =
+    getAttr(xml, "ReportPeriod", "ReportingPeriod", "PeriodName") || "Current Period";
 
-  // Split into Course blocks
-  const courseBlocks = xml.split(/<Course /i).slice(1);
+  const courseBlocks = xml.split(/<Course[\s>]/i).slice(1);
 
   const courses: CourseGrade[] = courseBlocks.map((block, idx) => {
-    const name = getAttr(block, "Title") || getAttr(block, "CourseTitle") || "Course";
-    const teacher = getAttr(block, "Staff") || getAttr(block, "Teacher") || "";
+    const name = getAttr(block, "Title", "CourseTitle", "CourseName") || `Course ${idx + 1}`;
+    const teacher = getAttr(block, "Staff", "Teacher", "TeacherName") || "";
     const period = parseInt(getAttr(block, "Period") || "0");
     const room = getAttr(block, "Room") || "";
-    const id = getAttr(block, "ID") || String(idx);
+    const id = getAttr(block, "ID", "CourseID") || String(idx);
 
-    // Find the Mark block
-    const markMatch = block.match(/<Mark[\s\S]*?>/);
-    const markBlock = markMatch ? markMatch[0] : "";
+    // Mark block — try both self-closing and opening tag
+    const markMatch = block.match(/<Mark\s[^>]*/i);
+    const markBlock = markMatch ? markMatch[0] : block;
 
-    const rawScore = getAttr(markBlock, "CalculatedScoreRaw") || getAttr(markBlock, "ScoreRaw");
-    const letter = getAttr(markBlock, "CalculatedScoreString") || getAttr(markBlock, "ScoreString") || "N/A";
-    const grade = rawScore !== "" ? parseFloat(rawScore) : null;
+    // Try every known attribute name for the numeric grade
+    const rawScore = getAttr(
+      markBlock,
+      "CalculatedScoreRaw", "ScoreRaw", "CalculatedScore",
+      "Score", "Percent", "PercentageGrade"
+    );
+    // Letter grade
+    const letter = getAttr(
+      markBlock,
+      "CalculatedScoreString", "ScoreString", "LetterGrade",
+      "Grade", "Mark"
+    ) || (rawScore ? "" : "N/A");
 
-    // Categories
-    const catMatches = block.match(/<AssignmentGradeCalc[^>]*\/>/g) || [];
+    const grade = rawScore !== "" && !isNaN(parseFloat(rawScore))
+      ? parseFloat(rawScore)
+      : null;
+
+    // Categories — self-closing AssignmentGradeCalc tags
+    const catMatches = block.match(/<AssignmentGradeCalc\s[^>]*\/?>/gi) || [];
     const categories: GradingCategory[] = catMatches.map((c) => ({
-      name: getAttr(c, "Type") || "Category",
+      name: getAttr(c, "Type", "Category", "Name") || "Category",
       weight: parseFloat(getAttr(c, "Weight") || "0"),
-      score: parseFloat(getAttr(c, "Points") || "0"),
-      maxScore: parseFloat(getAttr(c, "PointsPossible") || "0"),
+      score: parseFloat(getAttr(c, "Points", "Score") || "0"),
+      maxScore: parseFloat(getAttr(c, "PointsPossible", "MaxPoints", "TotalPoints") || "0"),
     }));
 
     // Assignments
-    const asnMatches = block.match(/<Assignment[^>]*\/>/g) || [];
+    const asnMatches = block.match(/<Assignment\s[^>]*\/?>/gi) || [];
     const assignments: Assignment[] = asnMatches.map((a, i) => {
-      const scoreStr = getAttr(a, "Score");
-      const pointsStr = getAttr(a, "Points");
+      const scoreStr = getAttr(a, "Score", "StudentScore");
+      const pointsStr = getAttr(a, "Points", "PointsPossible", "MaxScore");
       const maxScore = parseFloat(pointsStr) || 100;
-      const score = scoreStr === "" || scoreStr === "Not Graded" ? null : parseFloat(scoreStr);
+      const notGraded = !scoreStr || scoreStr === "Not Graded" || scoreStr === "N/A" || scoreStr === "—";
+      const score = notGraded ? null : parseFloat(scoreStr);
       return {
-        id: getAttr(a, "GradebookID") || String(i),
-        name: getAttr(a, "Measure") || "Assignment",
-        category: getAttr(a, "Type") || "Assignment",
+        id: getAttr(a, "GradebookID", "AssignmentID", "ID") || String(i),
+        name: getAttr(a, "Measure", "Name", "AssignmentName") || "Assignment",
+        category: getAttr(a, "Type", "Category") || "Assignment",
         score,
         maxScore,
         percentage: score !== null && maxScore > 0 ? (score / maxScore) * 100 : null,
-        isDropped: getAttr(a, "DropScoreFlag") === "1",
-        dueDate: getAttr(a, "DueDate") || "",
-        notes: getAttr(a, "Notes") || "",
+        isDropped: getAttr(a, "DropScoreFlag", "Dropped") === "1",
+        dueDate: getAttr(a, "DueDate", "Date") || "",
+        notes: getAttr(a, "Notes", "Note") || "",
       };
     });
 
