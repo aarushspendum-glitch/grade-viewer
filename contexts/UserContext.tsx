@@ -2,18 +2,96 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 
-// ── Avatar presets ────────────────────────────────────────────────────────────
+// ── Avatar presets — original SVG designs ─────────────────────────────────────
 export const AVATARS = [
-  { id: "lion",     emoji: "🦁", from: "#F59E0B", to: "#D97706", name: "Lion" },
-  { id: "dolphin",  emoji: "🐬", from: "#3B82F6", to: "#1D4ED8", name: "Dolphin" },
-  { id: "blossom",  emoji: "🌸", from: "#EC4899", to: "#9D174D", name: "Blossom" },
-  { id: "bolt",     emoji: "⚡", from: "#FBBF24", to: "#B45309", name: "Bolt" },
-  { id: "butterfly",emoji: "🦋", from: "#8B5CF6", to: "#5B21B6", name: "Butterfly" },
-  { id: "leaf",     emoji: "🌿", from: "#10B981", to: "#065F46", name: "Leaf" },
-  { id: "fire",     emoji: "🔥", from: "#EF4444", to: "#991B1B", name: "Fire" },
-  { id: "moon",     emoji: "🌙", from: "#6366F1", to: "#1E1B4B", name: "Moon" },
-  { id: "wave",     emoji: "🌊", from: "#06B6D4", to: "#0E7490", name: "Wave" },
-  { id: "star",     emoji: "⭐", from: "#F97316", to: "#9A3412", name: "Star" },
+  {
+    id: "aurora", name: "Aurora",
+    from: "#6366F1", to: "#06B6D4",
+    svg: `<g stroke="white" fill="none" stroke-width="2.5" stroke-linecap="round">
+      <path d="M5 10 Q12 6 18 10 Q24 14 31 10"/>
+      <path d="M5 18 Q12 14 18 18 Q24 22 31 18"/>
+      <path d="M5 26 Q12 22 18 26 Q24 30 31 26"/>
+    </g>`,
+  },
+  {
+    id: "prism", name: "Prism",
+    from: "#3B82F6", to: "#6D28D9",
+    svg: `<g>
+      <polygon points="18,4 32,30 4,30" stroke="white" fill="none" stroke-width="2.5" stroke-linejoin="round"/>
+      <line x1="18" y1="30" x2="18" y2="17" stroke="white" stroke-width="1.5" stroke-dasharray="2 2"/>
+    </g>`,
+  },
+  {
+    id: "orbit", name: "Orbit",
+    from: "#1D4ED8", to: "#0F172A",
+    svg: `<g>
+      <circle cx="18" cy="18" r="5" fill="white"/>
+      <ellipse cx="18" cy="18" rx="13" ry="5.5" stroke="white" fill="none" stroke-width="2" transform="rotate(-30 18 18)"/>
+    </g>`,
+  },
+  {
+    id: "spark", name: "Spark",
+    from: "#F59E0B", to: "#EA580C",
+    svg: `<path d="M18 3 L20.5 14.5 L32 18 L20.5 21.5 L18 33 L15.5 21.5 L4 18 L15.5 14.5 Z" fill="white"/>`,
+  },
+  {
+    id: "nova", name: "Nova",
+    from: "#DC2626", to: "#7C3AED",
+    svg: `<g stroke="white" stroke-linecap="round" fill="none">
+      <line x1="18" y1="4"  x2="18" y2="11" stroke-width="2.5"/>
+      <line x1="18" y1="25" x2="18" y2="32" stroke-width="2.5"/>
+      <line x1="4"  y1="18" x2="11" y2="18" stroke-width="2.5"/>
+      <line x1="25" y1="18" x2="32" y2="18" stroke-width="2.5"/>
+      <line x1="7"  y1="7"  x2="13" y2="13" stroke-width="2"/>
+      <line x1="23" y1="23" x2="29" y2="29" stroke-width="2"/>
+      <line x1="29" y1="7"  x2="23" y2="13" stroke-width="2"/>
+      <line x1="7"  y1="29" x2="13" y2="23" stroke-width="2"/>
+      <circle cx="18" cy="18" r="4.5" fill="white" stroke="none"/>
+    </g>`,
+  },
+  {
+    id: "tide", name: "Tide",
+    from: "#0891B2", to: "#1D4ED8",
+    svg: `<g stroke="white" fill="none" stroke-linecap="round">
+      <path d="M4 15 Q9.5 8 15 15 Q20.5 22 26 15 Q29 11 32 15" stroke-width="2.5"/>
+      <path d="M4 22 Q9.5 15 15 22 Q20.5 29 26 22 Q29 18 32 22" stroke-width="2" opacity="0.6"/>
+    </g>`,
+  },
+  {
+    id: "ember", name: "Ember",
+    from: "#EF4444", to: "#92400E",
+    svg: `<path d="M18 32 C10 32 6 26 6 20 C6 13 12 8 14 4 C14 10 16 13 18 11 C18 17 23 15 24 9 C28 13 30 17 30 21 C30 27 26 32 18 32 Z" fill="white"/>`,
+  },
+  {
+    id: "frost", name: "Frost",
+    from: "#7DD3FC", to: "#1D4ED8",
+    svg: `<g stroke="white" stroke-linecap="round" stroke-width="2">
+      <line x1="18" y1="4"  x2="18" y2="32"/>
+      <line x1="5"  y1="11" x2="31" y2="25"/>
+      <line x1="5"  y1="25" x2="31" y2="11"/>
+      <line x1="13" y1="6.5" x2="18" y2="4"/><line x1="23" y1="6.5" x2="18" y2="4"/>
+      <line x1="13" y1="29.5" x2="18" y2="32"/><line x1="23" y1="29.5" x2="18" y2="32"/>
+    </g>`,
+  },
+  {
+    id: "eclipse", name: "Eclipse",
+    from: "#4C1D95", to: "#1E1B4B",
+    svg: `<g>
+      <circle cx="18" cy="18" r="13" stroke="white" fill="none" stroke-width="2"/>
+      <circle cx="22" cy="15" r="10" fill="#4C1D95"/>
+      <circle cx="22" cy="15" r="10" stroke="white" fill="none" stroke-width="1.5" opacity="0.3"/>
+    </g>`,
+  },
+  {
+    id: "comet", name: "Comet",
+    from: "#F97316", to: "#7C3AED",
+    svg: `<g>
+      <circle cx="23" cy="11" r="5.5" fill="white"/>
+      <path d="M19 16 L7 28" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+      <path d="M16 15 L6 23" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+      <path d="M21 18 L12 30" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+    </g>`,
+  },
 ] as const;
 export type AvatarId = (typeof AVATARS)[number]["id"];
 
@@ -118,9 +196,10 @@ export function AvatarDisplay({ id, size = 32 }: { id: AvatarId; size?: number }
       width: size, height: size, borderRadius: size / 2, flexShrink: 0,
       background: `linear-gradient(135deg, ${av.from}, ${av.to})`,
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: size * 0.52,
+      overflow: "hidden",
     }}>
-      {av.emoji}
+      <svg viewBox="0 0 36 36" width={size * 0.82} height={size * 0.82}
+        dangerouslySetInnerHTML={{ __html: av.svg }} />
     </div>
   );
 }

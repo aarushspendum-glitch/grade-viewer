@@ -16,8 +16,7 @@ export default function Sidebar() {
   const router   = useRouter();
   const { name, avatarId } = useUser();
 
-  // Try to get username from session for display
-  const displayName = name || (typeof window !== "undefined" ? sessionStorage.getItem("username") ?? "" : "");
+  const displayName = name; // only show name set in Settings
 
   function signOut() {
     sessionStorage.clear();

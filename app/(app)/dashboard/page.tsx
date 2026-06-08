@@ -34,7 +34,7 @@ export default function DashboardPage() {
   const [upcomingEvents, setUpcomingEvents] = useState<CalEvent[]>([]);
   const [tip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
 
-  const displayName = name || (typeof window !== "undefined" ? sessionStorage.getItem("username") ?? "" : "");
+  const displayName = name; // only use the name the user set in Settings, never the login ID
 
   useEffect(() => {
     const raw = sessionStorage.getItem("gradebook");
