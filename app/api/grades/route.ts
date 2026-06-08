@@ -18,7 +18,8 @@ async function fetchStudentVueGradebook(
   const base = districtUrl.replace(/\/$/, "");
 
   const xmlParam = `<Parms><Param id="childIntID">0</Param></Parms>`;
-  const body = new URLSearchParams({
+
+  const payload = {
     userID: username,
     password: password,
     skipLoginLog: "true",
@@ -26,51 +27,74 @@ async function fetchStudentVueGradebook(
     webServiceHandleName: "PXPWebServices",
     methodName: "Gradebook",
     paramStr: xmlParam,
-  }).toString();
-
-  const headers = {
-    "Content-Type": "application/x-www-form-urlencoded",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Origin": base,
-    "Referer": `${base}/`,
   };
 
-  let lastStatus = 0;
+  // Try JSON body first (PXP2 REST), fall back to form-encoded (older Synergy)
+  const attempts = [
+    {
+      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/xml, */*",
+        "Origin": base,
+        "Referer": `${base}/`,
+      },
+    },
+    {
+      body: new URLSearchParams(payload).toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Origin": base,
+        "Referer": `${base}/`,
+      },
+    },
+  ];
+
+  let lastError = "";
   for (const path of SYNERGY_PATHS) {
-    const res = await fetch(`${base}${path}`, { method: "POST", headers, body });
-    if (res.status === 404 || res.status === 405) { lastStatus = res.status; continue; }
+    for (const attempt of attempts) {
+      const res = await fetch(`${base}${path}`, { method: "POST", headers: attempt.headers, body: attempt.body });
+      if (res.status === 404 || res.status === 405) break; // wrong path, try next
 
-    // Always read the body — even on 500, Synergy often returns useful XML
-    const xml = await res.text();
+      const text = await res.text();
 
-    // Check for auth errors regardless of HTTP status
-    if (
-      xml.includes("Invalid user id or password") ||
-      xml.includes("Login Failed") ||
-      xml.includes("AuthFailed") ||
-      xml.includes("invalid username") ||
-      xml.toLowerCase().includes("incorrect password")
-    ) {
-      throw new Error("Wrong username or password. Double-check your StudentVUE credentials.");
+      // Unwrap JSON envelope if present: {"d":"<xml...>"}
+      let xml = text;
+      if (text.trimStart().startsWith("{")) {
+        try {
+          const json = JSON.parse(text);
+          xml = json.d ?? json.data ?? text;
+        } catch { /* not JSON */ }
+      }
+
+      // Auth error check
+      if (
+        xml.includes("Invalid user id or password") ||
+        xml.includes("Login Failed") ||
+        xml.includes("AuthFailed") ||
+        xml.toLowerCase().includes("incorrect password")
+      ) {
+        throw new Error("Wrong username or password. Double-check your StudentVUE credentials.");
+      }
+
+      // Success — got gradebook XML
+      if (xml.includes("<Gradebook") || xml.includes("<gradebook")) {
+        return parseGradebook(xml);
+      }
+
+      // Got something but not gradebook — save snippet and try next format
+      if (res.ok || res.status === 500) {
+        lastError = xml.slice(0, 300).replace(/[\n\r]/g, " ");
+      }
     }
-
-    // If we got XML-looking content, try to parse it even on a 500
-    if (xml.includes("<Gradebook") || xml.includes("<gradebook")) {
-      return parseGradebook(xml);
-    }
-
-    // Hard failure with body snippet for debugging
-    if (!res.ok) {
-      const snippet = xml.slice(0, 200).replace(/\n/g, " ");
-      throw new Error(`School server error (HTTP ${res.status}): ${snippet}`);
-    }
-
-    return parseGradebook(xml);
   }
 
-  throw new Error(`Could not find your school's grade portal (tried ${SYNERGY_PATHS.length} paths, last HTTP ${lastStatus}). Your district URL may be incorrect.`);
+  throw new Error(lastError
+    ? `School server responded but returned unexpected content: ${lastError}`
+    : `Could not reach your school's grade portal. Check that your district is correct.`);
 }
 
 // Minimal XML parser — pulls out attributes without a heavy dependency
