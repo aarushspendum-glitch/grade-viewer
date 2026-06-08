@@ -56,16 +56,45 @@ export default function GPAPage() {
   const config = getConfig(districtId);
   const { unweighted, weighted, totalCredits } = calculateDistrictGPA(courses, config);
 
-  // On mount: merge live current grades + saved past courses
+  // On mount: try to scrape transcript, fall back to localStorage past courses
   useEffect(() => {
     const d = sessionStorage.getItem("district");
     if (d) setDistrictId(d);
+    loadAll();
+  }, []);
 
+  async function loadAll() {
+    setLoading(true);
     const current = currentFromGradebook();
+    const districtUrl = sessionStorage.getItem("districtUrl");
+    const username = sessionStorage.getItem("username");
+    const password = sessionStorage.getItem("password");
+
+    if (districtUrl && username && password) {
+      try {
+        const res = await fetch("/api/scrape-transcript", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password, districtUrl }),
+        });
+        const data = await res.json();
+        if (data.courses && data.courses.length > 0) {
+          // Merge: keep current live grades, add scraped past years
+          const pastScraped = (data.courses as GPACourse[]).filter(c => c.year !== "Current");
+          const seenKeys = new Set(current.map(c => c.name));
+          const deduped = pastScraped.filter(c => !seenKeys.has(c.name) || c.year !== "Current");
+          setCourses([...current, ...deduped.map(c => ({ ...c, id: uid() }))]);
+          setLoading(false);
+          return;
+        }
+      } catch { /* fall through */ }
+    }
+
+    // Fallback: use saved past courses from localStorage
     const past = loadPastFromStorage();
     setCourses([...current, ...past]);
     setLoading(false);
-  }, []);
+  }
 
   // Auto-save past courses to localStorage whenever they change
   useEffect(() => {
