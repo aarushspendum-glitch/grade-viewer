@@ -151,7 +151,7 @@ const Ctx = createContext<UserCtx>({
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [name,     setNameRaw]     = useState("");
-  const [avatarId, setAvatarIdRaw] = useState<AvatarId>("lion");
+  const [avatarId, setAvatarIdRaw] = useState<AvatarId>("aurora");
   const [themeId,  setThemeIdRaw]  = useState<ThemeId>("indigo");
   const styleRef = useRef<HTMLStyleElement | null>(null);
 
