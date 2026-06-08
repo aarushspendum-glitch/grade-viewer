@@ -27,9 +27,8 @@ export default function Sidebar() {
     <aside className="w-52 flex-shrink-0 flex flex-col bg-indigo-50 border-r border-indigo-100 py-5 px-3">
       {/* Logo */}
       <div className="flex items-center gap-2 mb-5 px-2">
-        {/* Ascending bars mark */}
-        <div className="w-7 h-7 rounded-lg flex-shrink-0 overflow-hidden"
-          style={{ background: "linear-gradient(135deg, #4F46E5, #7C3AED)" }}>
+        {/* Ascending bars mark — bg-indigo-700 auto-themes with color picker */}
+        <div className="w-7 h-7 rounded-lg flex-shrink-0 overflow-hidden bg-indigo-700">
           <svg viewBox="0 0 28 28" width="28" height="28">
             <rect x="4"  y="17" width="5" height="7"  rx="1.5" fill="rgba(255,255,255,0.5)"/>
             <rect x="11" y="12" width="5" height="12" rx="1.5" fill="rgba(255,255,255,0.75)"/>
