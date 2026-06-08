@@ -1,79 +1,129 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import type { GradebookData, CourseGrade, Assignment } from "@/lib/studentvue/types";
+import type { GradebookData, CourseGrade, Assignment, GradingCategory } from "@/lib/studentvue/types";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseStudentVueGradebook(raw: any): GradebookData {
-  const gb = raw?.Gradebook;
-  const reportingPeriod = gb?.["@_ReportPeriod"] ?? "Current";
+// Synergy StudentVUE XML API — used by FCPS, LCPS, PWCS, and most Virginia districts
+async function fetchStudentVueGradebook(
+  districtUrl: string,
+  username: string,
+  password: string
+): Promise<GradebookData> {
+  const base = districtUrl.replace(/\/$/, "");
+  const endpoint = `${base}/Service/PXPCommunication.asmx/ProcessWebServiceRequest`;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawCourses: any[] = Array.isArray(gb?.Courses?.Course)
-    ? gb.Courses.Course
-    : gb?.Courses?.Course
-    ? [gb.Courses.Course]
-    : [];
+  const xmlParam = `<Parms><Param id="childIntID">0</Param></Parms>`;
 
-  const courses: CourseGrade[] = rawCourses.map((c: any, idx: number) => {
-    const mark = Array.isArray(c.Marks?.Mark) ? c.Marks.Mark[0] : c.Marks?.Mark;
+  const body = new URLSearchParams({
+    userID: username,
+    password: password,
+    skipLoginLog: "true",
+    parent: "false",
+    webServiceHandleName: "PXPWebServices",
+    methodName: "Gradebook",
+    paramStr: xmlParam,
+  });
 
-    const rawAssignments: any[] = Array.isArray(mark?.Assignments?.Assignment)
-      ? mark.Assignments.Assignment
-      : mark?.Assignments?.Assignment
-      ? [mark.Assignments.Assignment]
-      : [];
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
 
-    const assignments: Assignment[] = rawAssignments.map((a: any) => ({
-      id: a["@_GradebookID"] ?? String(Math.random()),
-      name: a["@_Measure"] ?? "Unknown",
-      category: a["@_Type"] ?? "Assignment",
-      score: a["@_Score"] === "Not Graded" || a["@_Score"] === "" ? null : parseFloat(a["@_Score"]),
-      maxScore: parseFloat(a["@_ScoreType"] === "Raw Score" ? a["@_Points"] ?? "100" : "100"),
-      percentage: a["@_Score"] === "Not Graded" || a["@_Score"] === "" ? null :
-        (parseFloat(a["@_Score"]) / parseFloat(a["@_Points"] ?? "100")) * 100,
-      isDropped: a["@_DropScoreFlag"] === "1",
-      dueDate: a["@_DueDate"] ?? "",
-      notes: a["@_Notes"] ?? "",
+  if (!res.ok) {
+    throw new Error(`StudentVUE returned HTTP ${res.status}`);
+  }
+
+  const xml = await res.text();
+
+  // Check for login error
+  if (xml.includes("Invalid user id or password") || xml.includes("Login Failed")) {
+    throw new Error("Invalid username or password");
+  }
+
+  return parseGradebook(xml);
+}
+
+// Minimal XML parser — pulls out attributes without a heavy dependency
+function getAttr(xml: string, attr: string): string {
+  const match = xml.match(new RegExp(`${attr}="([^"]*)"`));
+  return match ? match[1] : "";
+}
+
+function getAllMatches(xml: string, tag: string): string[] {
+  const re = new RegExp(`<${tag}[^>]*/?>([\\s\\S]*?)</${tag}>|<${tag}[^/]*/?>`, "g");
+  const selfClose = new RegExp(`<${tag}([^/]*)/>`, "g");
+  const results: string[] = [];
+  let m;
+
+  // Self-closing tags
+  while ((m = selfClose.exec(xml)) !== null) {
+    results.push(m[0]);
+  }
+
+  // Also try block tags
+  const blockRe = new RegExp(`<${tag}([\\s\\S]*?)>([\\s\\S]*?)<\\/${tag}>`, "g");
+  while ((m = blockRe.exec(xml)) !== null) {
+    results.push(m[0]);
+  }
+
+  return results;
+}
+
+function parseGradebook(xml: string): GradebookData {
+  // Extract reporting period
+  const reportingPeriod = getAttr(xml, "ReportPeriod") || "Current Period";
+
+  // Split into Course blocks
+  const courseBlocks = xml.split(/<Course /i).slice(1);
+
+  const courses: CourseGrade[] = courseBlocks.map((block, idx) => {
+    const name = getAttr(block, "Title") || getAttr(block, "CourseTitle") || "Course";
+    const teacher = getAttr(block, "Staff") || getAttr(block, "Teacher") || "";
+    const period = parseInt(getAttr(block, "Period") || "0");
+    const room = getAttr(block, "Room") || "";
+    const id = getAttr(block, "ID") || String(idx);
+
+    // Find the Mark block
+    const markMatch = block.match(/<Mark[\s\S]*?>/);
+    const markBlock = markMatch ? markMatch[0] : "";
+
+    const rawScore = getAttr(markBlock, "CalculatedScoreRaw") || getAttr(markBlock, "ScoreRaw");
+    const letter = getAttr(markBlock, "CalculatedScoreString") || getAttr(markBlock, "ScoreString") || "N/A";
+    const grade = rawScore !== "" ? parseFloat(rawScore) : null;
+
+    // Categories
+    const catMatches = block.match(/<AssignmentGradeCalc[^>]*\/>/g) || [];
+    const categories: GradingCategory[] = catMatches.map((c) => ({
+      name: getAttr(c, "Type") || "Category",
+      weight: parseFloat(getAttr(c, "Weight") || "0"),
+      score: parseFloat(getAttr(c, "Points") || "0"),
+      maxScore: parseFloat(getAttr(c, "PointsPossible") || "0"),
     }));
 
-    const rawCategories: any[] = Array.isArray(mark?.GradeCalculationSummary?.AssignmentGradeCalc)
-      ? mark.GradeCalculationSummary.AssignmentGradeCalc
-      : mark?.GradeCalculationSummary?.AssignmentGradeCalc
-      ? [mark.GradeCalculationSummary.AssignmentGradeCalc]
-      : [];
+    // Assignments
+    const asnMatches = block.match(/<Assignment[^>]*\/>/g) || [];
+    const assignments: Assignment[] = asnMatches.map((a, i) => {
+      const scoreStr = getAttr(a, "Score");
+      const pointsStr = getAttr(a, "Points");
+      const maxScore = parseFloat(pointsStr) || 100;
+      const score = scoreStr === "" || scoreStr === "Not Graded" ? null : parseFloat(scoreStr);
+      return {
+        id: getAttr(a, "GradebookID") || String(i),
+        name: getAttr(a, "Measure") || "Assignment",
+        category: getAttr(a, "Type") || "Assignment",
+        score,
+        maxScore,
+        percentage: score !== null && maxScore > 0 ? (score / maxScore) * 100 : null,
+        isDropped: getAttr(a, "DropScoreFlag") === "1",
+        dueDate: getAttr(a, "DueDate") || "",
+        notes: getAttr(a, "Notes") || "",
+      };
+    });
 
-    const categories = rawCategories.map((cat: any) => ({
-      name: cat["@_Type"] ?? "Category",
-      weight: parseFloat(cat["@_Weight"] ?? "0"),
-      score: parseFloat(cat["@_Points"] ?? "0"),
-      maxScore: parseFloat(cat["@_PointsPossible"] ?? "0"),
-    }));
-
-    const rawGrade = mark?.["@_CalculatedScoreRaw"];
-    const grade = rawGrade !== undefined && rawGrade !== "" ? parseFloat(rawGrade) : null;
-
-    return {
-      id: c["@_ID"] ?? String(idx),
-      name: c["@_Title"] ?? "Unknown Course",
-      teacher: c["@_Staff"] ?? "",
-      period: parseInt(c["@_Period"] ?? "0"),
-      room: c["@_Room"] ?? "",
-      grade,
-      letter: mark?.["@_CalculatedScoreString"] ?? (grade !== null ? gradeToLetter(grade) : "N/A"),
-      categories,
-      assignments,
-    };
+    return { id, name, teacher, period, room, grade, letter, categories, assignments };
   });
 
   return { reportingPeriod, courses };
-}
-
-function gradeToLetter(pct: number): string {
-  if (pct >= 90) return "A";
-  if (pct >= 80) return "B";
-  if (pct >= 70) return "C";
-  if (pct >= 60) return "D";
-  return "F";
 }
 
 export async function POST(request: NextRequest) {
@@ -87,13 +137,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Dynamic import since studentvue is CJS
-    const { StudentVue } = await import("studentvue");
-    const client = new StudentVue(districtUrl, username, password);
-    const raw = await client.getGradebook();
-    const gradebook = parseStudentVueGradebook(raw);
+    const gradebook = await fetchStudentVueGradebook(districtUrl, username, password);
 
-    // Persist encrypted creds reference in supabase (we only store districtId, not plaintext password)
+    // Save district + username (never the password)
     await supabase.from("user_settings").upsert({
       user_id: user.id,
       district_url: districtUrl,
