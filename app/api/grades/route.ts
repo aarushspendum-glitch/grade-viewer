@@ -41,12 +41,32 @@ async function fetchStudentVueGradebook(
   for (const path of SYNERGY_PATHS) {
     const res = await fetch(`${base}${path}`, { method: "POST", headers, body });
     if (res.status === 404 || res.status === 405) { lastStatus = res.status; continue; }
-    if (!res.ok) throw new Error(`Could not connect to your school's grading system (HTTP ${res.status}). Make sure your district is selected correctly.`);
 
+    // Always read the body — even on 500, Synergy often returns useful XML
     const xml = await res.text();
-    if (xml.includes("Invalid user id or password") || xml.includes("Login Failed") || xml.includes("AuthFailed")) {
+
+    // Check for auth errors regardless of HTTP status
+    if (
+      xml.includes("Invalid user id or password") ||
+      xml.includes("Login Failed") ||
+      xml.includes("AuthFailed") ||
+      xml.includes("invalid username") ||
+      xml.toLowerCase().includes("incorrect password")
+    ) {
       throw new Error("Wrong username or password. Double-check your StudentVUE credentials.");
     }
+
+    // If we got XML-looking content, try to parse it even on a 500
+    if (xml.includes("<Gradebook") || xml.includes("<gradebook")) {
+      return parseGradebook(xml);
+    }
+
+    // Hard failure with body snippet for debugging
+    if (!res.ok) {
+      const snippet = xml.slice(0, 200).replace(/\n/g, " ");
+      throw new Error(`School server error (HTTP ${res.status}): ${snippet}`);
+    }
+
     return parseGradebook(xml);
   }
 
