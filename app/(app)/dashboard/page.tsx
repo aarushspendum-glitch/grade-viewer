@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { GradebookData } from "@/lib/studentvue/types";
 import GradeCard from "@/components/GradeCard";
-import { calculateGPA } from "@/lib/gpa";
+import { getConfig, calculateDistrictGPA, detectCourseType, shouldExclude } from "@/lib/gpa-configs";
 import { RefreshCw } from "lucide-react";
 
 export default function DashboardPage() {
@@ -22,11 +22,13 @@ export default function DashboardPage() {
 
   if (!gradebook) return null;
 
+  const districtId = typeof window !== "undefined" ? (sessionStorage.getItem("district") ?? "fcps") : "fcps";
+  const config = getConfig(districtId);
   const gpaInput = gradebook.courses
-    .filter((c) => c.grade !== null)
-    .map((c) => ({ id: c.id, name: c.name, grade: c.grade!, credits: 1, type: "Regular" as const }));
+    .filter((c) => c.grade !== null && !shouldExclude(c.name))
+    .map((c) => ({ id: c.id, name: c.name, grade: c.grade!, credits: 1, type: detectCourseType(c.name) }));
 
-  const { unweighted, weighted } = calculateGPA(gpaInput);
+  const { unweighted, weighted } = calculateDistrictGPA(gpaInput, config);
 
   return (
     <div className="p-8 max-w-5xl mx-auto">

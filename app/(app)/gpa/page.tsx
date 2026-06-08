@@ -60,11 +60,12 @@ export default function GPAPage() {
 
       if (data.courses && data.courses.length > 0) {
         setCourses(data.courses.map((c: GPACourse) => ({ ...c, id: String(nextId++) })));
-        setLoadNote(`Loaded ${data.courses.length} courses across ${data.periodsFound ?? "multiple"} reporting periods.`);
+        const periods = data.periodNames ? ` Periods found: ${data.periodNames.join(", ")}` : "";
+        setLoadNote(`Loaded ${data.courses.length} courses across ${data.periodsFound ?? 0} reporting periods.${periods}`);
       } else {
-        // Fall back to current gradebook
         loadFromGradebook();
-        setLoadNote("Could not load past periods — showing current semester only. Add past courses manually if needed.");
+        const debug = data.periodNames ? ` Periods: ${data.periodNames.join(", ")}` : (data.debug ? ` Raw: ${String(data.debug).slice(0, 300)}` : "");
+        setLoadNote(`Showing current semester only — past periods not available.${debug}`);
       }
     } catch {
       loadFromGradebook();

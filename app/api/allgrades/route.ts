@@ -181,7 +181,12 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    return NextResponse.json({ courses: allCourses, periodsFound: periods.length });
+    return NextResponse.json({
+      courses: allCourses,
+      periodsFound: periods.length,
+      periodNames: periods.map((p) => `[${p.index}] ${p.name} (${p.year})`),
+      debug: currentXml.slice(0, 1000),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed";
     return NextResponse.json({ error: message }, { status: 500 });
