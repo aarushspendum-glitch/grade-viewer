@@ -188,35 +188,50 @@ export async function POST(request: NextRequest) {
       debugLog.push(`Login may have failed — still on login page or invalid msg`);
     }
 
-    // ── Step 3: Fetch transcript / grade history pages ─────────────────────────
-    const pageUrls = [
-      `${base}/PXP2_Transcript.aspx`,
-      `${base}/PXP2_GradeHistory.aspx`,
-      `${base}/PXP2_Transcript.aspx?AGU=0`,
-      `${base}/PXP2_ReportCards.aspx`,
-    ];
+    // ── Step 3: Fetch home page to discover what pages actually exist ────────
+    const homeUrl = step2.url; // Home_PXP2.aspx
+    const homeRes = await fetch(homeUrl, {
+      headers: { ...BROWSER_HEADERS, "Cookie": cookies },
+      redirect: "follow",
+    });
+    const homeHtml = await homeRes.text();
+
+    // Extract all internal PXP2 links from the nav
+    const allLinks = [...homeHtml.matchAll(/href="([^"]*PXP2[^"]*\.aspx[^"]*)"/gi)]
+      .map(m => {
+        const href = m[1];
+        return href.startsWith("http") ? href : `${base}/${href.replace(/^\/SVUE\//, "").replace(/^\//, "")}`;
+      });
+    const uniqueLinks = [...new Set(allLinks)];
+    debugLog.push(`Home page links: ${uniqueLinks.join(", ")}`);
+
+    // Grade/transcript-related keywords to prioritize
+    const gradeKeywords = ["grade", "transcript", "history", "report", "schedule", "classlist"];
+    const gradeLinks = uniqueLinks.filter(u =>
+      gradeKeywords.some(k => u.toLowerCase().includes(k))
+    );
+    // Fallback: try all PXP2 links
+    const toTry = gradeLinks.length > 0 ? gradeLinks : uniqueLinks.slice(0, 10);
+    debugLog.push(`Trying pages: ${toTry.join(", ")}`);
 
     let bestCourses: GPACourse[] = [];
     let bestHtmlSnippet = "";
 
-    for (const url of pageUrls) {
+    for (const url of toTry) {
       try {
         const res = await fetch(url, {
-          headers: { ...BROWSER_HEADERS, "Cookie": cookies, "Referer": step2.url },
+          headers: { ...BROWSER_HEADERS, "Cookie": cookies, "Referer": homeUrl },
           redirect: "follow",
         });
         const html = await res.text();
-        debugLog.push(`${url.split("/").pop()}: ${res.status}, ${html.length} chars`);
-
-        // If redirected back to login, skip
-        if (res.url.includes("Login")) { debugLog.push("  → redirected to login (not authenticated)"); continue; }
+        debugLog.push(`${url.split("/").pop()?.split("?")[0]}: ${res.status}, ${html.length} chars`);
+        if (res.url.includes("Login")) { debugLog.push("  → back to login"); continue; }
 
         const parsed = parseTranscriptHtml(html, debugLog);
         debugLog.push(`  → parsed ${parsed.length} courses`);
-
         if (parsed.length > bestCourses.length) {
           bestCourses = parsed;
-          bestHtmlSnippet = html.slice(0, 2000);
+          bestHtmlSnippet = html.slice(0, 3000);
         }
       } catch (e) {
         debugLog.push(`  → error: ${e instanceof Error ? e.message : "failed"}`);
@@ -228,7 +243,7 @@ export async function POST(request: NextRequest) {
         courses: [],
         error: "Logged in but no transcript courses found.",
         debug: debugLog.join(" | "),
-        htmlSnippet: bestHtmlSnippet.slice(0, 1500),
+        htmlSnippet: bestHtmlSnippet,
       });
     }
 
