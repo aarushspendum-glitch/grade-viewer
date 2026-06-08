@@ -1,0 +1,129 @@
+import { NextRequest, NextResponse } from "next/server";
+
+export interface CalEvent {
+  uid: string;
+  title: string;
+  description: string;
+  start: string;   // ISO string
+  end: string;     // ISO string
+  allDay: boolean;
+  course: string;  // extracted from description/title
+  type: "assignment" | "event" | "test" | "other";
+}
+
+function parseICalDate(val: string): string {
+  // DATE-TIME: 20250115T230000Z or 20250115T230000
+  // DATE: 20250115
+  val = val.trim().replace(/^.*:/, ""); // strip TZID= prefix
+  if (val.length === 8) {
+    // All-day date
+    return `${val.slice(0,4)}-${val.slice(4,6)}-${val.slice(6,8)}T00:00:00.000Z`;
+  }
+  const y = val.slice(0,4), mo = val.slice(4,6), d = val.slice(6,8);
+  const h = val.slice(9,11), m = val.slice(11,13), s = val.slice(13,15);
+  const utc = val.endsWith("Z") ? "Z" : "";
+  return `${y}-${mo}-${d}T${h}:${m}:${s}${utc || ".000"}`;
+}
+
+function unescape(s: string): string {
+  return s.replace(/\\n/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\");
+}
+
+function detectType(title: string, desc: string): CalEvent["type"] {
+  const t = (title + " " + desc).toLowerCase();
+  if (/\b(test|quiz|exam|assessment)\b/.test(t)) return "test";
+  if (/\b(assignment|hw|homework|due|submit|turn in)\b/.test(t)) return "assignment";
+  if (/\b(event|meeting|trip|club|activity)\b/.test(t)) return "event";
+  return "other";
+}
+
+function extractCourse(description: string, title: string): string {
+  // Schoology descriptions often start with the course name before a newline or dash
+  const m = description.match(/^([^\n\r|–\-]{3,60?})[\n\r|–\-]/);
+  if (m) return m[1].trim();
+  // Fall back to first word group in title
+  return title.split(":")[0].trim() || "";
+}
+
+function parseICal(text: string): CalEvent[] {
+  const events: CalEvent[] = [];
+  // Split into VEVENT blocks
+  const blocks = text.split(/BEGIN:VEVENT/i).slice(1);
+  for (const block of blocks) {
+    const end = block.indexOf("END:VEVENT");
+    const content = end >= 0 ? block.slice(0, end) : block;
+    // Unfold lines (RFC 5545: continuation lines start with space or tab)
+    const unfolded = content.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "");
+    const lines = unfolded.split(/\r?\n/).filter(l => l.trim());
+
+    const get = (key: string): string => {
+      const re = new RegExp(`^${key}[;:][^\r\n]*`, "im");
+      const m = unfolded.match(re);
+      if (!m) return "";
+      return unescape(m[0].replace(new RegExp(`^${key}[^:]*:`, "i"), "").trim());
+    };
+
+    const uid = get("UID") || Math.random().toString(36).slice(2);
+    const title = get("SUMMARY");
+    const description = get("DESCRIPTION");
+    const dtstart = lines.find(l => /^DTSTART/i.test(l))?.replace(/^DTSTART[^:]*:/i, "") ?? "";
+    const dtend   = lines.find(l => /^DTEND/i.test(l))?.replace(/^DTEND[^:]*:/i, "")   ?? "";
+
+    if (!title || !dtstart) continue;
+
+    const allDay = dtstart.length === 8 || /VALUE=DATE/i.test(
+      lines.find(l => /^DTSTART/i.test(l)) ?? ""
+    );
+
+    events.push({
+      uid,
+      title,
+      description,
+      start: parseICalDate(dtstart),
+      end: dtend ? parseICalDate(dtend) : parseICalDate(dtstart),
+      allDay,
+      course: extractCourse(description, title),
+      type: detectType(title, description),
+    });
+  }
+  return events;
+}
+
+export async function POST(request: NextRequest) {
+  const { icalUrl } = await request.json();
+  if (!icalUrl || typeof icalUrl !== "string") {
+    return NextResponse.json({ error: "Missing icalUrl" }, { status: 400 });
+  }
+  // Only allow Schoology or FCPS domains for safety
+  try {
+    const parsed = new URL(icalUrl);
+    const ok = ["schoology.com", "fcps.schoology.com", "app.schoology.com"].some(d =>
+      parsed.hostname === d || parsed.hostname.endsWith("." + d)
+    );
+    if (!ok) {
+      return NextResponse.json({ error: "Only Schoology calendar URLs are supported." }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "Invalid URL." }, { status: 400 });
+  }
+
+  try {
+    const res = await fetch(icalUrl, {
+      headers: { "User-Agent": "UpGrade/1.0 (FCPS grade viewer)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+      return NextResponse.json({ error: `Schoology returned ${res.status}. Check your calendar URL.` }, { status: 502 });
+    }
+    const text = await res.text();
+    if (!text.includes("BEGIN:VCALENDAR")) {
+      return NextResponse.json({ error: "URL does not appear to be a valid iCal feed." }, { status: 400 });
+    }
+    const events = parseICal(text);
+    return NextResponse.json({ events });
+  } catch (err) {
+    return NextResponse.json({
+      error: err instanceof Error ? err.message : "Failed to fetch calendar.",
+    }, { status: 500 });
+  }
+}

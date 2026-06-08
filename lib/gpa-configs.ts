@@ -14,20 +14,19 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   // 10-point scale, AP/IB/DE +1.0, Honors +0.5
   fcps: {
     name: "Fairfax County Public Schools",
-    // 10-pt flat scale: A/A- all = 4.0, B+/B/B- all = 3.0, etc. No A+.
+    // True plus/minus scale per FCPS policy. No A+, no D+/D-.
+    // Source: FCPS Regulation 2601.2
     scale: [
-      { min: 93, letter: "A",  points: 4.0 },
-      { min: 90, letter: "A-", points: 4.0 },
-      { min: 87, letter: "B+", points: 3.0 },
-      { min: 83, letter: "B",  points: 3.0 },
-      { min: 80, letter: "B-", points: 3.0 },
-      { min: 77, letter: "C+", points: 2.0 },
-      { min: 73, letter: "C",  points: 2.0 },
-      { min: 70, letter: "C-", points: 2.0 },
-      { min: 67, letter: "D+", points: 1.0 },
-      { min: 63, letter: "D",  points: 1.0 },
-      { min: 60, letter: "D-", points: 1.0 },
-      { min:  0, letter: "F",  points: 0.0 },
+      { min: 92.5, letter: "A",  points: 4.0 },
+      { min: 89.5, letter: "A-", points: 3.7 },
+      { min: 86.5, letter: "B+", points: 3.3 },
+      { min: 82.5, letter: "B",  points: 3.0 },
+      { min: 79.5, letter: "B-", points: 2.7 },
+      { min: 76.5, letter: "C+", points: 2.3 },
+      { min: 72.5, letter: "C",  points: 2.0 },
+      { min: 69.5, letter: "C-", points: 1.7 },
+      { min: 59.5, letter: "D",  points: 1.0 },
+      { min:  0,   letter: "F",  points: 0.0 },
     ],
     weights: { AP: 1.0, IB: 1.0, DE: 1.0, Honors: 0.5, Regular: 0.0 },
     capAt5: false,
@@ -100,7 +99,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   mcps: {
     name: "Montgomery County Public Schools",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -122,7 +120,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   pgcps: {
     name: "Prince George's County Schools",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -144,7 +141,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   hcpss: {
     name: "Howard County Public Schools",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -208,7 +204,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   lausd: {
     name: "Los Angeles Unified",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -228,7 +223,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   sdusd: {
     name: "San Diego Unified",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -250,7 +244,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   dvusd: {
     name: "Deer Valley Unified",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -270,7 +263,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   cusd: {
     name: "Chandler Unified",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },
@@ -292,7 +284,6 @@ export const GPA_CONFIGS: Record<string, GPAConfig> = {
   default: {
     name: "Standard",
     scale: [
-      { min: 97, letter: "A+", points: 4.0 },
       { min: 93, letter: "A",  points: 4.0 },
       { min: 90, letter: "A-", points: 4.0 },
       { min: 87, letter: "B+", points: 3.0 },

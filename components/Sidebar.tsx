@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Calculator, LogOut, BookOpen } from "lucide-react";
+import { LayoutDashboard, Calculator, LogOut, BookOpen, Calendar } from "lucide-react";
 
 const NAV = [
-  { href: "/dashboard", label: "Grades", icon: LayoutDashboard },
-  { href: "/gpa",       label: "GPA",    icon: Calculator },
+  { href: "/dashboard", label: "Grades",   icon: LayoutDashboard },
+  { href: "/gpa",       label: "GPA",      icon: Calculator },
+  { href: "/calendar",  label: "Calendar", icon: Calendar },
 ];
 
 export default function Sidebar() {

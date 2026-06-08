@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Target, ChevronDown, ChevronUp, Loader2, Save } from "lucide-react";
+import { Plus, Trash2, Target, ChevronDown, ChevronUp, Loader2, Save, Lock, Unlock } from "lucide-react";
 import {
-  GPA_CONFIGS, getConfig, calculateDistrictGPA, detectCourseType, shouldExclude,
+  getConfig, calculateDistrictGPA, detectCourseType, shouldExclude,
   letterToMidPct, type GPACourse, type CourseType,
 } from "@/lib/gpa-configs";
 import { optimizeGPA } from "@/lib/gpa";
@@ -12,11 +12,19 @@ import type { GradebookData } from "@/lib/studentvue/types";
 const COURSE_TYPES: CourseType[] = ["Regular", "Honors", "AP", "IB", "DE"];
 const PAST_YEARS = ["2024-25", "2023-24", "2022-23", "2021-22", "2020-21"];
 const STORAGE_KEY = "upgrade_past_courses";
+const LOCK_KEY = "upgrade_locked_years";
 
 let _id = 1;
 function uid() { return String(_id++); }
 function blank(year: string): GPACourse {
   return { id: uid(), name: "", grade: 95, credits: 1, type: "Regular", year };
+}
+
+function loadLockedYears(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(LOCK_KEY) ?? "[]")); } catch { return new Set(); }
+}
+function saveLockedYears(s: Set<string>) {
+  localStorage.setItem(LOCK_KEY, JSON.stringify([...s]));
 }
 
 function loadPastFromStorage(): GPACourse[] {
@@ -26,8 +34,10 @@ function loadPastFromStorage(): GPACourse[] {
     return (JSON.parse(raw) as GPACourse[]).map(c => ({ ...c, id: uid() }));
   } catch { return []; }
 }
-function savePastToStorage(courses: GPACourse[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(courses.filter(c => c.year !== "Current")));
+function savePastToStorage(courses: GPACourse[], lockedYears?: Set<string>) {
+  // Always save non-current courses; also save current-year courses if that year is locked
+  const toSave = courses.filter(c => c.year !== "Current" || lockedYears?.has("Current"));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 }
 function currentFromGradebook(): GPACourse[] {
   try {
@@ -42,23 +52,27 @@ function currentFromGradebook(): GPACourse[] {
 
 export default function GPAPage() {
   const [courses, setCourses] = useState<GPACourse[]>([]);
-  const [districtId, setDistrictId] = useState("fcps");
+  const districtId = "fcps";
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
   const [targetGPA, setTargetGPA] = useState("3.8");
   const [useWeighted, setUseWeighted] = useState(true);
   const [showOptimizer, setShowOptimizer] = useState(false);
   const [collapsedYears, setCollapsedYears] = useState<Set<string>>(new Set());
+  const [lockedYears, setLockedYears] = useState<Set<string>>(new Set());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const config = getConfig(districtId);
   const { unweighted, weighted, totalCredits } = calculateDistrictGPA(courses, config);
 
   useEffect(() => {
-    const d = sessionStorage.getItem("district");
-    if (d) setDistrictId(d);
-    const current = currentFromGradebook();
+    // FCPS-only — district is always fcps
+    const locked = loadLockedYears();
+    setLockedYears(locked);
     const past = loadPastFromStorage();
+    // Only load live current-year courses if "Current" is not locked
+    const current = locked.has("Current") ? [] : currentFromGradebook();
+    // For locked past years, keep saved versions; for unlocked ones, saved version is already source of truth
     setCourses([...current, ...past]);
     setLoading(false);
   }, []);
@@ -67,11 +81,11 @@ export default function GPAPage() {
     if (loading) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      savePastToStorage(courses);
+      savePastToStorage(courses, lockedYears);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     }, 800);
-  }, [courses, loading]);
+  }, [courses, lockedYears, loading]);
 
   function addCourse(year: string) {
     setCourses(p => [...p, blank(year)]);
@@ -97,6 +111,14 @@ export default function GPAPage() {
   }
   function toggleYear(year: string) {
     setCollapsedYears(s => { const n = new Set(s); n.has(year) ? n.delete(year) : n.add(year); return n; });
+  }
+  function toggleLock(year: string) {
+    setLockedYears(s => {
+      const n = new Set(s);
+      n.has(year) ? n.delete(year) : n.add(year);
+      saveLockedYears(n);
+      return n;
+    });
   }
 
   const years = [...new Set(courses.map(c => c.year ?? ""))].filter(Boolean).sort((a, b) => {
@@ -132,12 +154,9 @@ export default function GPAPage() {
             {saved && <span className="ml-2 text-emerald-500 inline-flex items-center gap-1"><Save className="w-3 h-3" />Saved</span>}
           </p>
         </div>
-        <select value={districtId} onChange={e => setDistrictId(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
-          {Object.entries(GPA_CONFIGS).filter(([k]) => k !== "default").map(([k, v]) => (
-            <option key={k} value={k}>{v.name}</option>
-          ))}
-        </select>
+        <span className="text-xs font-medium bg-indigo-100 text-indigo-600 px-2.5 py-1 rounded-full">
+          Fairfax County Public Schools
+        </span>
       </div>
 
       {/* GPA cards */}
@@ -199,16 +218,24 @@ export default function GPAPage() {
             const { unweighted: uw, weighted: w } = calculateDistrictGPA(yc, config);
             return (
               <div key={year}>
-                <button onClick={() => toggleYear(year)} className="w-full flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-gray-700">
-                      {year === "Current" ? `Current (${new Date().getFullYear()}-${String(new Date().getFullYear()+1).slice(2)})` : year}
-                    </span>
-                    <span className="text-xs text-gray-400">{yc.filter(c => !c.excluded).length} courses</span>
-                    <span className="text-xs font-medium text-indigo-500 tabular-nums">{w.toFixed(2)}W · {uw.toFixed(2)}UW</span>
-                  </div>
-                  {collapsed ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronUp className="w-4 h-4 text-gray-400" />}
-                </button>
+                <div className="flex items-center mb-2">
+                  <button onClick={() => toggleYear(year)} className="flex-1 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-gray-700">
+                        {year === "Current" ? `Current (${new Date().getFullYear()}-${String(new Date().getFullYear()+1).slice(2)})` : year}
+                      </span>
+                      <span className="text-xs text-gray-400">{yc.filter(c => !c.excluded).length} courses</span>
+                      <span className="text-xs font-medium text-indigo-500 tabular-nums">{w.toFixed(2)}W · {uw.toFixed(2)}UW</span>
+                    </div>
+                    {collapsed ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronUp className="w-4 h-4 text-gray-400" />}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleLock(year); }}
+                    title={lockedYears.has(year) ? "Locked — manual edits preserved on refresh. Click to unlock." : "Unlocked — refreshing will reload from StudentVUE. Click to lock."}
+                    className={`ml-2 p-1.5 rounded-lg transition-colors flex-shrink-0 ${lockedYears.has(year) ? "text-amber-500 hover:text-amber-600 bg-amber-50 border border-amber-200" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 border border-gray-200"}`}>
+                    {lockedYears.has(year) ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
 
                 {!collapsed && (
                   <div>

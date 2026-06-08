@@ -2,25 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DISTRICTS } from "@/lib/studentvue/districts";
-import { BookOpen, Loader2, ChevronDown, Lock, BarChart3, Edit3, Target } from "lucide-react";
+import { BookOpen, Loader2, Lock, BarChart3, Edit3, Target, Calendar } from "lucide-react";
 
-// Group districts by state for the dropdown
-const BY_STATE = DISTRICTS.reduce<Record<string, typeof DISTRICTS>>((acc, d) => {
-  if (!acc[d.state]) acc[d.state] = [];
-  acc[d.state].push(d);
-  return acc;
-}, {});
+const FCPS_URL = "https://sisstudent.fcps.edu/SVUE";
+const FCPS_ID  = "fcps";
 
 export default function HomePage() {
   const router = useRouter();
-  const [districtId, setDistrictId] = useState("fcps");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const district = DISTRICTS.find((d) => d.id === districtId)!;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,16 +22,15 @@ export default function HomePage() {
       const res = await fetch("/api/grades", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, districtUrl: district.url }),
+        body: JSON.stringify({ username, password, districtUrl: FCPS_URL }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not connect to your school's system.");
-      // Store grades in sessionStorage so other pages can read them
-      sessionStorage.setItem("gradebook", JSON.stringify(data));
-      sessionStorage.setItem("district", districtId);
-      sessionStorage.setItem("districtUrl", district.url);
-      sessionStorage.setItem("username", username);
-      sessionStorage.setItem("password", password);
+      if (!res.ok) throw new Error(data.error ?? "Could not connect to StudentVUE.");
+      sessionStorage.setItem("gradebook",   JSON.stringify(data));
+      sessionStorage.setItem("district",    FCPS_ID);
+      sessionStorage.setItem("districtUrl", FCPS_URL);
+      sessionStorage.setItem("username",    username);
+      sessionStorage.setItem("password",    password);
       router.push("/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -57,40 +48,31 @@ export default function HomePage() {
             <BookOpen className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="font-bold text-gray-900 text-lg tracking-tight">UpGrade</span>
+          <span className="ml-2 text-xs font-medium bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">FCPS</span>
         </div>
       </nav>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-16">
-        {/* Hero text */}
+        {/* Hero */}
         <div className="text-center mb-10 max-w-lg">
           <h1 className="text-4xl font-bold text-gray-900 tracking-tight mb-3">
             Your grades, finally clear.
           </h1>
           <p className="text-gray-500 text-lg">
-            Connect your school account and get a clean view of every class, assignment, and what your GPA could be.
+            Sign in with your FCPS StudentVUE account for live grades, GPA calculator, and your Schoology calendar.
           </p>
         </div>
 
         {/* Login card */}
         <div className="w-full max-w-sm">
           <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 flex flex-col gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">School district</label>
-              <div className="relative">
-                <select
-                  value={districtId}
-                  onChange={(e) => setDistrictId(e.target.value)}
-                  className="w-full appearance-none border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {Object.entries(BY_STATE).sort().map(([state, districts]) => (
-                    <optgroup key={state} label={state}>
-                      {districts.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <BookOpen className="w-4 h-4 text-indigo-500" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Fairfax County Public Schools</p>
+                <p className="text-xs text-gray-400">sisstudent.fcps.edu</p>
               </div>
             </div>
 
@@ -100,7 +82,7 @@ export default function HomePage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                placeholder="Your StudentVUE username"
+                placeholder="Your FCPS StudentVUE username"
                 className="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
               />
             </div>
@@ -136,7 +118,7 @@ export default function HomePage() {
             <div className="flex items-center gap-1.5">
               <Lock className="w-3 h-3 text-gray-300 flex-shrink-0" />
               <p className="text-xs text-gray-400">
-                Your password is sent directly to your school and never stored.
+                Your password is sent directly to FCPS and never stored by UpGrade.
               </p>
             </div>
           </form>
@@ -148,6 +130,7 @@ export default function HomePage() {
             { icon: BarChart3, label: "Live grades" },
             { icon: Edit3,     label: "What-if editor" },
             { icon: Target,    label: "GPA optimizer" },
+            { icon: Calendar,  label: "Schoology calendar" },
           ].map(({ icon: Icon, label }) => (
             <div key={label} className="flex items-center gap-2 text-sm text-gray-400">
               <Icon className="w-4 h-4 text-indigo-400" />
