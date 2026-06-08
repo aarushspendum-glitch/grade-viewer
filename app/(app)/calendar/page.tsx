@@ -306,15 +306,19 @@ export default function CalendarPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 leading-snug">{ev.title}</p>
-                        {ev.course && (
-                          <p className="text-xs text-indigo-500 font-medium mt-0.5 truncate">{ev.course}</p>
-                        )}
-                        <div className="flex items-center gap-2 mt-1.5">
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${tc.pill}`}>
                             {tc.label}
                           </span>
                           <span className="text-xs text-gray-400">{formatTime(ev.start, ev.allDay)}</span>
                         </div>
+                        {ev.description && (
+                          <a href={ev.description} target="_blank" rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 mt-1.5">
+                            <ExternalLink className="w-3 h-3" />
+                            Open in Schoology
+                          </a>
+                        )}
                       </div>
                     </div>
                   );

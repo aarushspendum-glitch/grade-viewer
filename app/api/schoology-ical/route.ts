@@ -29,26 +29,20 @@ function unescape(s: string): string {
   return s.replace(/\\n/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\");
 }
 
-function detectType(title: string, desc: string): CalEvent["type"] {
-  const t = (title + " " + desc).toLowerCase();
-  if (/\b(test|quiz|exam|assessment)\b/.test(t)) return "test";
-  if (/\b(assignment|hw|homework|due|submit|turn in)\b/.test(t)) return "assignment";
-  if (/\b(event|meeting|trip|club|activity)\b/.test(t)) return "event";
-  return "other";
-}
-
-function extractCourse(description: string, title: string, categories: string): string {
-  // 1. CATEGORIES field — Schoology often puts the course name here
-  if (categories && categories.trim().length > 2) return categories.trim();
-  // 2. Description first line (Schoology puts course name before first \n)
-  const firstLine = description.split(/\\n|\n/)[0].trim();
-  if (firstLine && firstLine.length > 2 && firstLine.length < 80 && firstLine !== title) {
-    return firstLine;
+function detectType(title: string, url: string): CalEvent["type"] {
+  // URL is the most reliable signal: /assignment/ vs /event/ vs /discussion/
+  if (/\/assignment\//i.test(url) || /\/discussion\//i.test(url)) {
+    // Further refine by title keywords
+    const t = title.toLowerCase();
+    if (/\b(test|quiz|exam|assessment|retake|midterm|final)\b/.test(t)) return "test";
+    return "assignment";
   }
-  // 3. Title pattern "Course Name: Assignment Title"
-  const colonIdx = title.indexOf(":");
-  if (colonIdx > 3 && colonIdx < 50) return title.slice(0, colonIdx).trim();
-  return "";
+  if (/\/event\//i.test(url)) return "event";
+  // Fall back to title keywords
+  const t = title.toLowerCase();
+  if (/\b(test|quiz|exam|assessment|retake|midterm|final)\b/.test(t)) return "test";
+  if (/\b(hw|homework|due|submit|turn in|project|essay|lab report)\b/.test(t)) return "assignment";
+  return "other";
 }
 
 function parseICal(text: string): CalEvent[] {
@@ -69,10 +63,9 @@ function parseICal(text: string): CalEvent[] {
       return unescape(m[0].replace(new RegExp(`^${key}[^:]*:`, "i"), "").trim());
     };
 
-    const uid = get("UID") || Math.random().toString(36).slice(2);
+    const uid   = get("UID") || Math.random().toString(36).slice(2);
     const title = get("SUMMARY");
-    const description = get("DESCRIPTION");
-    const categories = get("CATEGORIES");
+    const url   = get("URL");
     const dtstart = lines.find(l => /^DTSTART/i.test(l))?.replace(/^DTSTART[^:]*:/i, "") ?? "";
     const dtend   = lines.find(l => /^DTEND/i.test(l))?.replace(/^DTEND[^:]*:/i, "")   ?? "";
 
@@ -85,12 +78,12 @@ function parseICal(text: string): CalEvent[] {
     events.push({
       uid,
       title,
-      description,
+      description: url,   // store the Schoology link for "Open in Schoology"
       start: parseICalDate(dtstart),
       end: dtend ? parseICalDate(dtend) : parseICalDate(dtstart),
       allDay,
-      course: extractCourse(description, title, categories),
-      type: detectType(title, description),
+      course: "",          // Schoology iCal does not include course names
+      type: detectType(title, url),
     });
   }
   return events;
