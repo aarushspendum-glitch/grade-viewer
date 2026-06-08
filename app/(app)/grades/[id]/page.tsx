@@ -125,7 +125,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
   }
 
   function addHypothetical() {
-    const firstCat = cats[0]?.name ?? (course.assignments[0]?.category ?? "");
+    const firstCat = cats[0]?.name ?? (course?.assignments[0]?.category ?? "");
     setHypothetical(p => [...p, { name: "", category: firstCat, score: "", max: "100" }]);
   }
 
